@@ -25,17 +25,39 @@ type Product = {
   isBTC: boolean;
 };
 
+function cleanIngredientName(raw: string): {
+  name: string;
+  concentration: string;
+} {
+  // Remove common prefixes like "Active ingredient (in each caplet)", "Each tablet contains", etc.
+  let s = raw
+    .replace(/active\s+ingredient[s]?\s*(\(in\s+each\s+[\w\s]+\))?\s*/gi, "")
+    .replace(/each\s+[\w\s]+\s+contains\s*/gi, "")
+    .replace(/^\s*[:;-]\s*/g, "")
+    .trim();
+
+  // Extract concentration: number + unit at end, e.g. "500 mg" or "10mg/5mL"
+  const concMatch = s.match(
+    /([\d.]+\s*(?:mg|mcg|mL|g|%|IU|units?)(?:\s*\/\s*[\w.]+)?)\s*$/i,
+  );
+  const concentration = concMatch ? concMatch[1].trim() : "";
+  const name = concMatch ? s.slice(0, concMatch.index).trim() : s;
+
+  return { name: name || s, concentration };
+}
+
 function parseIngredients(r: any): Ingredient[] {
-  const purposeList: string[] = r.purpose || [];
+  const purposeList: string[] = (r.purpose || []).map((p: string) =>
+    p.replace(/^purpose\s*/i, "").trim(),
+  );
   const raw: string[] = r.active_ingredient || r.active_ingredients || [];
   if (raw.length === 0) return [];
+
   return raw.map((ing: string, i: number) => {
-    const match = ing.match(
-      /^([a-zA-Z\s,()/-]+?)\s+([\d.]+\s*(?:mg|mcg|mL|g|%|IU|units?)(?:\s*\/\s*[\w.]+)?)\s*$/i,
-    );
+    const { name, concentration } = cleanIngredientName(ing);
     return {
-      name: match ? match[1].trim() : ing.trim(),
-      concentration: match ? match[2].trim() : "",
+      name,
+      concentration,
       purpose: purposeList[i] || purposeList[0] || "",
     };
   });
@@ -76,7 +98,7 @@ export default function LookupScreen() {
     if (!result) {
       Alert.alert(
         "Not found",
-        'Try the generic name instead (e.g. "acetaminophen" for Tylenol, "ibuprofen" for Advil, "loratadine" for Claritin).',
+        "Try the generic name instead.\n\nExamples:\n• Tylenol → acetaminophen\n• Advil → ibuprofen\n• Claritin → loratadine\n• Zyrtec → cetirizine\n• Nexium → omeprazole",
       );
       setLoading(false);
       return;
@@ -162,9 +184,12 @@ export default function LookupScreen() {
 
             {product.isBTC && (
               <View style={styles.alertBTC}>
+                <Text style={styles.alertBTCTitle}>
+                  Behind-the-counter product
+                </Text>
                 <Text style={styles.alertBTCText}>
-                  Behind-the-counter product. Valid ID required at pharmacy.
-                  Monthly purchase limit applies.
+                  Valid photo ID required at pharmacy. Federal purchase limit
+                  applies (max 3.6g/day, 9g/30 days).
                 </Text>
               </View>
             )}
@@ -269,8 +294,14 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     color: "#111",
     lineHeight: 28,
+    textTransform: "capitalize",
   },
-  productForm: { fontSize: 15, color: "#666", marginTop: 2 },
+  productForm: {
+    fontSize: 15,
+    color: "#666",
+    marginTop: 2,
+    textTransform: "capitalize",
+  },
   manufacturer: { fontSize: 14, color: "#888", marginTop: 2, marginBottom: 14 },
   alertBTC: {
     backgroundColor: "#FCEBEB",
@@ -280,7 +311,13 @@ const styles = StyleSheet.create({
     padding: 12,
     marginBottom: 12,
   },
-  alertBTCText: { fontSize: 15, color: "#501313", lineHeight: 22 },
+  alertBTCTitle: {
+    fontSize: 15,
+    fontWeight: "600",
+    color: "#501313",
+    marginBottom: 4,
+  },
+  alertBTCText: { fontSize: 14, color: "#501313", lineHeight: 20 },
   alertWarn: {
     backgroundColor: "#FAEEDA",
     borderLeftWidth: 3,
@@ -334,7 +371,12 @@ const styles = StyleSheet.create({
   ingrLeft: { flexDirection: "row", gap: 8, flex: 1, marginRight: 8 },
   ingrNameWrap: { flex: 1 },
   ingrNum: { fontSize: 14, color: "#999", minWidth: 20, marginTop: 2 },
-  ingrName: { fontSize: 16, fontWeight: "600", color: "#111" },
+  ingrName: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: "#111",
+    textTransform: "capitalize",
+  },
   ingrConc: { fontSize: 13, color: "#666", marginTop: 2 },
   ingrPurpose: {
     fontSize: 13,
