@@ -9,13 +9,9 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import BarcodeScanner from "../../components/BarcodeScanner";
 
-type Ingredient = {
-  name: string;
-  concentration: string;
-  purpose: string;
-};
-
+type Ingredient = { name: string; concentration: string; purpose: string };
 type Product = {
   brandName: string;
   manufacturer: string;
@@ -29,20 +25,16 @@ function cleanIngredientName(raw: string): {
   name: string;
   concentration: string;
 } {
-  // Remove common prefixes like "Active ingredient (in each caplet)", "Each tablet contains", etc.
   let s = raw
     .replace(/active\s+ingredient[s]?\s*(\(in\s+each\s+[\w\s]+\))?\s*/gi, "")
     .replace(/each\s+[\w\s]+\s+contains\s*/gi, "")
     .replace(/^\s*[:;-]\s*/g, "")
     .trim();
-
-  // Extract concentration: number + unit at end, e.g. "500 mg" or "10mg/5mL"
   const concMatch = s.match(
     /([\d.]+\s*(?:mg|mcg|mL|g|%|IU|units?)(?:\s*\/\s*[\w.]+)?)\s*$/i,
   );
   const concentration = concMatch ? concMatch[1].trim() : "";
   const name = concMatch ? s.slice(0, concMatch.index).trim() : s;
-
   return { name: name || s, concentration };
 }
 
@@ -52,7 +44,6 @@ function parseIngredients(r: any): Ingredient[] {
   );
   const raw: string[] = r.active_ingredient || r.active_ingredients || [];
   if (raw.length === 0) return [];
-
   return raw.map((ing: string, i: number) => {
     const { name, concentration } = cleanIngredientName(ing);
     return {
@@ -63,87 +54,125 @@ function parseIngredients(r: any): Ingredient[] {
   });
 }
 
+async function lookupByQuery(query: string): Promise<any | null> {
+  const q = encodeURIComponent(query.trim());
+  const urls = [
+    `https://api.fda.gov/drug/label.json?search=openfda.brand_name:${q}&limit=1`,
+    `https://api.fda.gov/drug/label.json?search=openfda.generic_name:${q}&limit=1`,
+    `https://api.fda.gov/drug/label.json?search=openfda.substance_name:${q}&limit=1`,
+    `https://api.fda.gov/drug/label.json?search=${q}&limit=1`,
+  ];
+  for (const url of urls) {
+    try {
+      const res = await fetch(url);
+      const data = await res.json();
+      if (data.results?.length > 0) return data.results[0];
+    } catch {
+      continue;
+    }
+  }
+  return null;
+}
+
+async function lookupByUPC(upc: string): Promise<any | null> {
+  const urls = [
+    `https://api.fda.gov/drug/label.json?search=openfda.upc:${upc}&limit=1`,
+    `https://api.fda.gov/drug/label.json?search=openfda.package_ndc:${upc}&limit=1`,
+  ];
+  for (const url of urls) {
+    try {
+      const res = await fetch(url);
+      const data = await res.json();
+      if (data.results?.length > 0) return data.results[0];
+    } catch {
+      continue;
+    }
+  }
+  return null;
+}
+
+function buildProduct(r: any, fallbackName: string): Product {
+  const ingredients = parseIngredients(r);
+  const form = (r.dosage_form?.[0] || "").toLowerCase();
+  const brandName =
+    r.openfda?.brand_name?.[0] ||
+    r.brand_name?.[0] ||
+    r.openfda?.generic_name?.[0] ||
+    fallbackName;
+  const manufacturer =
+    r.openfda?.manufacturer_name?.[0] || r.manufacturer_name?.[0] || "";
+  const servingSizeRaw = (r.dosage_and_administration?.[0] || "").toLowerCase();
+  const servingSizeAlert =
+    servingSizeRaw.includes("2 tablet") ||
+    servingSizeRaw.includes("2 capsule") ||
+    servingSizeRaw.includes("two tablet") ||
+    servingSizeRaw.includes("two capsule")
+      ? "Dose requires 2 units — not 1. Check the label carefully."
+      : null;
+  const allText = JSON.stringify(r).toLowerCase();
+  const isBTC =
+    allText.includes("pseudoephedrine") || allText.includes("ephedrine");
+  return {
+    brandName,
+    manufacturer,
+    form,
+    ingredients,
+    servingSizeAlert,
+    isBTC,
+  };
+}
+
 export default function LookupScreen() {
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(false);
   const [product, setProduct] = useState<Product | null>(null);
+  const [scannerOpen, setScannerOpen] = useState(false);
+
+  const doLookup = async (r: any | null, fallback: string) => {
+    if (!r) {
+      Alert.alert(
+        "Not found",
+        "Try the generic name.\n\nExamples:\n• Tylenol → acetaminophen\n• Advil → ibuprofen\n• Claritin → loratadine\n• Zyrtec → cetirizine",
+      );
+      setLoading(false);
+      return;
+    }
+    setProduct(buildProduct(r, fallback));
+    setLoading(false);
+  };
 
   const searchProduct = async () => {
     if (!query.trim()) return;
     setLoading(true);
     setProduct(null);
+    const r = await lookupByQuery(query.trim());
+    doLookup(r, query.trim());
+  };
 
-    const q = encodeURIComponent(query.trim());
-    const urls = [
-      `https://api.fda.gov/drug/label.json?search=openfda.brand_name:${q}&limit=1`,
-      `https://api.fda.gov/drug/label.json?search=openfda.generic_name:${q}&limit=1`,
-      `https://api.fda.gov/drug/label.json?search=openfda.substance_name:${q}&limit=1`,
-      `https://api.fda.gov/drug/label.json?search=${q}&limit=1`,
-    ];
-
-    let result = null;
-    for (const url of urls) {
-      try {
-        const res = await fetch(url);
-        const data = await res.json();
-        if (data.results && data.results.length > 0) {
-          result = data.results[0];
-          break;
-        }
-      } catch {
-        continue;
-      }
-    }
-
-    if (!result) {
-      Alert.alert(
-        "Not found",
-        "Try the generic name instead.\n\nExamples:\n• Tylenol → acetaminophen\n• Advil → ibuprofen\n• Claritin → loratadine\n• Zyrtec → cetirizine\n• Nexium → omeprazole",
-      );
-      setLoading(false);
-      return;
-    }
-
-    const r = result;
-    const ingredients = parseIngredients(r);
-    const form = (r.dosage_form?.[0] || "").toLowerCase();
-    const brandName =
-      r.openfda?.brand_name?.[0] ||
-      r.brand_name?.[0] ||
-      r.openfda?.generic_name?.[0] ||
-      query;
-    const manufacturer =
-      r.openfda?.manufacturer_name?.[0] || r.manufacturer_name?.[0] || "";
-
-    const servingSizeRaw = (
-      r.dosage_and_administration?.[0] || ""
-    ).toLowerCase();
-    const servingSizeAlert =
-      servingSizeRaw.includes("2 tablet") ||
-      servingSizeRaw.includes("2 capsule") ||
-      servingSizeRaw.includes("two tablet") ||
-      servingSizeRaw.includes("two capsule")
-        ? "Dose requires 2 units — not 1. Check the label carefully."
-        : null;
-
-    const allText = JSON.stringify(r).toLowerCase();
-    const isBTC =
-      allText.includes("pseudoephedrine") || allText.includes("ephedrine");
-
-    setProduct({
-      brandName,
-      manufacturer,
-      form,
-      ingredients,
-      servingSizeAlert,
-      isBTC,
-    });
-    setLoading(false);
+  const handleScanned = async (upc: string) => {
+    setScannerOpen(false);
+    setLoading(true);
+    setProduct(null);
+    setQuery(upc);
+    let r = await lookupByUPC(upc);
+    if (!r) r = await lookupByQuery(upc);
+    doLookup(r, upc);
   };
 
   return (
     <ScrollView style={styles.container} keyboardShouldPersistTaps="handled">
       <View style={styles.inner}>
+        {/* Scan button */}
+        <TouchableOpacity
+          style={styles.scanBtn}
+          onPress={() => setScannerOpen(true)}
+        >
+          <Text style={styles.scanIcon}>▦</Text>
+          <Text style={styles.scanBtnText}>Scan barcode</Text>
+        </TouchableOpacity>
+
+        <Text style={styles.divider}>— or search by name —</Text>
+
         <View style={styles.searchRow}>
           <TextInput
             style={styles.input}
@@ -188,8 +217,7 @@ export default function LookupScreen() {
                   Behind-the-counter product
                 </Text>
                 <Text style={styles.alertBTCText}>
-                  Valid photo ID required at pharmacy. Federal purchase limit
-                  applies (max 3.6g/day, 9g/30 days).
+                  Valid photo ID required. Federal purchase limit applies.
                 </Text>
               </View>
             )}
@@ -260,6 +288,12 @@ export default function LookupScreen() {
           </View>
         )}
       </View>
+
+      <BarcodeScanner
+        visible={scannerOpen}
+        onClose={() => setScannerOpen(false)}
+        onScanned={handleScanned}
+      />
     </ScrollView>
   );
 }
@@ -267,6 +301,27 @@ export default function LookupScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#f5f5f5" },
   inner: { padding: 16 },
+  scanBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 10,
+    backgroundColor: "#fff",
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: "#ccc",
+    borderStyle: "dashed",
+    paddingVertical: 16,
+    marginBottom: 12,
+  },
+  scanIcon: { fontSize: 22, color: "#185FA5" },
+  scanBtnText: { fontSize: 16, color: "#185FA5", fontWeight: "500" },
+  divider: {
+    textAlign: "center",
+    fontSize: 13,
+    color: "#aaa",
+    marginBottom: 12,
+  },
   searchRow: { flexDirection: "row", gap: 8, marginBottom: 6 },
   input: {
     flex: 1,
