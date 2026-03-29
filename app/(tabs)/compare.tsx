@@ -2,7 +2,9 @@ import { useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -405,7 +407,14 @@ export default function CompareScreen() {
 
       {/* Search modal */}
       <Modal visible={modalVisible} transparent animationType="slide">
-        <View style={styles.modalOverlay}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+          style={styles.modalOverlay}
+        >
+          <TouchableOpacity
+            style={styles.modalDismiss}
+            onPress={() => setModalVisible(false)}
+          />
           <View style={styles.modalBox}>
             <Text style={styles.modalTitle}>
               Search {activeSlot === "a" ? "Product A" : "Product B"}
@@ -434,7 +443,7 @@ export default function CompareScreen() {
               </TouchableOpacity>
             </View>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
     </ScrollView>
   );
@@ -575,12 +584,15 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(0,0,0,0.5)",
     justifyContent: "flex-end",
   },
+  modalDismiss: {
+    flex: 1,
+  },
   modalBox: {
     backgroundColor: "#fff",
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     padding: 24,
-    paddingBottom: 40,
+    paddingBottom: 36,
   },
   modalTitle: {
     fontSize: 18,
