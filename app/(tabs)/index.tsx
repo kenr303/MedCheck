@@ -1,3 +1,4 @@
+import { useRouter } from "expo-router";
 import { useState } from "react";
 import {
   ActivityIndicator,
@@ -10,16 +11,7 @@ import {
   View,
 } from "react-native";
 import BarcodeScanner from "../../components/BarcodeScanner";
-
-type Ingredient = { name: string; concentration: string; purpose: string };
-type Product = {
-  brandName: string;
-  manufacturer: string;
-  form: string;
-  ingredients: Ingredient[];
-  servingSizeAlert: string | null;
-  isBTC: boolean;
-};
+import { Ingredient, MedProduct, useMedStore } from "../../store/useMedStore";
 
 function cleanIngredientName(raw: string): {
   name: string;
@@ -75,7 +67,6 @@ async function lookupByQuery(query: string): Promise<any | null> {
 }
 
 async function lookupByUPC(upc: string): Promise<any | null> {
-  // Step 1: try OpenFDA directly by UPC/NDC
   const fdaUrls = [
     `https://api.fda.gov/drug/label.json?search=openfda.upc:${upc}&limit=1`,
     `https://api.fda.gov/drug/label.json?search=openfda.package_ndc:${upc}&limit=1`,
@@ -89,24 +80,16 @@ async function lookupByUPC(upc: string): Promise<any | null> {
       continue;
     }
   }
-
-  // Step 2: use Open Food Facts / Open Product Data to get product name from UPC
   try {
     const res = await fetch(
       `https://world.openfoodfacts.org/api/v0/product/${upc}.json`,
     );
     const data = await res.json();
     if (data.status === 1 && data.product) {
-      const productName =
-        data.product.product_name || data.product.generic_name || "";
-      if (productName) {
-        // Now search FDA with that name
-        return await lookupByQuery(productName);
-      }
+      const name = data.product.product_name || data.product.generic_name || "";
+      if (name) return await lookupByQuery(name);
     }
   } catch {}
-
-  // Step 3: try UPC lookup via Open UPC database
   try {
     const res = await fetch(
       `https://api.upcitemdb.com/prod/trial/lookup?upc=${upc}`,
@@ -117,11 +100,10 @@ async function lookupByUPC(upc: string): Promise<any | null> {
       if (name) return await lookupByQuery(name);
     }
   } catch {}
-
   return null;
 }
 
-function buildProduct(r: any, fallbackName: string): Product {
+function buildProduct(r: any, fallbackName: string): MedProduct {
   const ingredients = parseIngredients(r);
   const form = (r.dosage_form?.[0] || "").toLowerCase();
   const brandName =
@@ -142,6 +124,9 @@ function buildProduct(r: any, fallbackName: string): Product {
   const allText = JSON.stringify(r).toLowerCase();
   const isBTC =
     allText.includes("pseudoephedrine") || allText.includes("ephedrine");
+  const genericKey = (r.openfda?.generic_name?.[0] || "")
+    .toLowerCase()
+    .split(" ")[0];
   return {
     brandName,
     manufacturer,
@@ -149,25 +134,31 @@ function buildProduct(r: any, fallbackName: string): Product {
     ingredients,
     servingSizeAlert,
     isBTC,
+    genericKey,
   };
 }
 
 export default function LookupScreen() {
+  const router = useRouter();
+  const { setCurrentProduct, setCompareA, compareA, compareB, setCompareB } =
+    useMedStore();
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(false);
-  const [product, setProduct] = useState<Product | null>(null);
+  const [product, setProduct] = useState<MedProduct | null>(null);
   const [scannerOpen, setScannerOpen] = useState(false);
 
   const finishLookup = (r: any | null, fallback: string) => {
     if (!r) {
       Alert.alert(
         "Not found",
-        "Try the generic name instead.\n\nExamples:\n• Tylenol → acetaminophen\n• Advil → ibuprofen\n• Claritin → loratadine\n• Zyrtec → cetirizine\n• Nexium → omeprazole",
+        "Try the generic name.\n\nExamples:\n• Tylenol → acetaminophen\n• Advil → ibuprofen\n• Claritin → loratadine\n• Zyrtec → cetirizine\n• Nexium → omeprazole",
       );
       setLoading(false);
       return;
     }
-    setProduct(buildProduct(r, fallback));
+    const p = buildProduct(r, fallback);
+    setProduct(p);
+    setCurrentProduct(p);
     setLoading(false);
   };
 
@@ -186,6 +177,44 @@ export default function LookupScreen() {
     setQuery(upc);
     const r = await lookupByUPC(upc);
     finishLookup(r, upc);
+  };
+
+  const handleSeePrices = () => {
+    if (!product) return;
+    setCurrentProduct(product);
+    router.push("/(tabs)/prices");
+  };
+
+  const handleAddToCompare = () => {
+    if (!product) return;
+    if (!compareA) {
+      setCompareA(product);
+      Alert.alert(
+        "Added to Compare",
+        `${product.brandName} added as Product A.\n\nSearch another product and tap "Add to compare" to add Product B.`,
+      );
+    } else if (!compareB) {
+      setCompareB(product);
+      Alert.alert(
+        "Added to Compare",
+        `${product.brandName} added as Product B. Go to the Compare tab to see the comparison.`,
+      );
+    } else {
+      Alert.alert(
+        "Compare slots full",
+        "Both slots are filled. Would you like to replace Product A?",
+        [
+          { text: "Cancel", style: "cancel" },
+          {
+            text: "Replace A",
+            onPress: () => {
+              setCompareA(product);
+              Alert.alert("Done", "Product A replaced.");
+            },
+          },
+        ],
+      );
+    }
   };
 
   return (
@@ -299,10 +328,16 @@ export default function LookupScreen() {
             )}
 
             <View style={styles.actionRow}>
-              <TouchableOpacity style={styles.actionBtn}>
+              <TouchableOpacity
+                style={styles.actionBtn}
+                onPress={handleSeePrices}
+              >
                 <Text style={styles.actionBtnText}>See prices</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={styles.actionBtn}>
+              <TouchableOpacity
+                style={styles.actionBtn}
+                onPress={handleAddToCompare}
+              >
                 <Text style={styles.actionBtnText}>Add to compare</Text>
               </TouchableOpacity>
               <TouchableOpacity

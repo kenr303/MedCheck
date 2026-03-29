@@ -12,20 +12,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-
-type Ingredient = {
-  name: string;
-  concentration: string;
-  purpose: string;
-};
-
-type CompareProduct = {
-  brandName: string;
-  form: string;
-  ingredients: Ingredient[];
-  isBTC: boolean;
-  bestPrice: string;
-};
+import { Ingredient, MedProduct, useMedStore } from "../../store/useMedStore";
 
 function cleanIngredientName(raw: string): {
   name: string;
@@ -68,7 +55,7 @@ const BEST_PRICES: Record<string, string> = {
   omeprazole: "$9.88 (Walmart)",
 };
 
-async function fetchProduct(query: string): Promise<CompareProduct | null> {
+async function fetchProduct(query: string): Promise<MedProduct | null> {
   const q = encodeURIComponent(query.trim());
   const urls = [
     `https://api.fda.gov/drug/label.json?search=openfda.brand_name:${q}&limit=1`,
@@ -81,7 +68,7 @@ async function fetchProduct(query: string): Promise<CompareProduct | null> {
     try {
       const res = await fetch(url);
       const data = await res.json();
-      if (data.results && data.results.length > 0) {
+      if (data.results?.length > 0) {
         result = data.results[0];
         break;
       }
@@ -105,25 +92,35 @@ async function fetchProduct(query: string): Promise<CompareProduct | null> {
     .toLowerCase()
     .split(" ")[0];
   const bestPrice = BEST_PRICES[genericKey] || "See prices tab";
-  return { brandName, form, ingredients, isBTC, bestPrice };
+  const manufacturer = r.openfda?.manufacturer_name?.[0] || "";
+  const servingSizeAlert = null;
+  return {
+    brandName,
+    manufacturer,
+    form,
+    ingredients,
+    isBTC,
+    genericKey,
+    bestPrice,
+    servingSizeAlert,
+  } as any;
 }
 
 type SlotProps = {
   label: string;
-  product: CompareProduct | null;
+  product: MedProduct | null;
   loading: boolean;
   onSearch: () => void;
 };
 
 function Slot({ label, product, loading, onSearch }: SlotProps) {
-  if (loading) {
+  if (loading)
     return (
       <View style={[styles.slot, styles.slotFilled]}>
         <ActivityIndicator size="small" color="#185FA5" />
       </View>
     );
-  }
-  if (!product) {
+  if (!product)
     return (
       <TouchableOpacity
         style={styles.slot}
@@ -135,7 +132,6 @@ function Slot({ label, product, loading, onSearch }: SlotProps) {
         <Text style={styles.slotHint}>Scan or search</Text>
       </TouchableOpacity>
     );
-  }
   return (
     <TouchableOpacity
       style={[styles.slot, styles.slotFilled]}
@@ -155,8 +151,8 @@ function Slot({ label, product, loading, onSearch }: SlotProps) {
 }
 
 export default function CompareScreen() {
-  const [productA, setProductA] = useState<CompareProduct | null>(null);
-  const [productB, setProductB] = useState<CompareProduct | null>(null);
+  const { compareA, compareB, setCompareA, setCompareB, clearCompare } =
+    useMedStore();
   const [loadingA, setLoadingA] = useState(false);
   const [loadingB, setLoadingB] = useState(false);
   const [modalVisible, setModalVisible] = useState(false);
@@ -174,82 +170,75 @@ export default function CompareScreen() {
     setModalVisible(false);
     if (activeSlot === "a") setLoadingA(true);
     else setLoadingB(true);
-
     const result = await fetchProduct(searchQuery.trim());
-
     if (!result) {
       Alert.alert(
         "Not found",
         "Try the generic name (e.g. acetaminophen, ibuprofen, loratadine).",
       );
     } else {
-      if (activeSlot === "a") setProductA(result);
-      else setProductB(result);
+      if (activeSlot === "a") setCompareA(result);
+      else setCompareB(result);
     }
     if (activeSlot === "a") setLoadingA(false);
     else setLoadingB(false);
   };
 
-  const reset = () => {
-    setProductA(null);
-    setProductB(null);
-  };
-
-  // Build comparison rows
-  const bothLoaded = productA && productB;
-
-  // Find ingredient names unique to A, unique to B, and shared
-  const namesA = productA?.ingredients.map((i) => i.name.toLowerCase()) || [];
-  const namesB = productB?.ingredients.map((i) => i.name.toLowerCase()) || [];
+  const bothLoaded = compareA && compareB;
+  const namesA = compareA?.ingredients.map((i) => i.name.toLowerCase()) || [];
+  const namesB = compareB?.ingredients.map((i) => i.name.toLowerCase()) || [];
   const uniqueToA = namesA.filter((n) => !namesB.includes(n));
   const uniqueToB = namesB.filter((n) => !namesA.includes(n));
   const shared = namesA.filter((n) => namesB.includes(n));
   const hasDiff = uniqueToA.length > 0 || uniqueToB.length > 0;
-
-  // Concentration difference check
   const concA =
-    productA?.ingredients.map((i) => i.concentration).join(",") || "";
+    compareA?.ingredients.map((i) => i.concentration).join(",") || "";
   const concB =
-    productB?.ingredients.map((i) => i.concentration).join(",") || "";
+    compareB?.ingredients.map((i) => i.concentration).join(",") || "";
   const concDiffers = bothLoaded && concA !== concB;
 
   return (
     <ScrollView style={styles.container} keyboardShouldPersistTaps="handled">
       <View style={styles.inner}>
-        {/* Two slots */}
         <View style={styles.slotRow}>
           <Slot
             label="Product A"
-            product={productA}
+            product={compareA}
             loading={loadingA}
             onSearch={() => openSearch("a")}
           />
           <Slot
             label="Product B"
-            product={productB}
+            product={compareB}
             loading={loadingB}
             onSearch={() => openSearch("b")}
           />
         </View>
 
-        {/* Comparison table */}
+        {!bothLoaded && (
+          <View style={styles.emptyHint}>
+            <Text style={styles.emptyHintText}>
+              Tap a slot to search, or find a product in the Lookup tab and tap
+              "Add to compare".
+            </Text>
+          </View>
+        )}
+
         {bothLoaded && (
           <View>
-            {/* BTC warning */}
-            {(productA.isBTC || productB.isBTC) && (
+            {(compareA.isBTC || compareB.isBTC) && (
               <View style={styles.alertBTC}>
                 <Text style={styles.alertBTCTitle}>
                   Behind-the-counter product
                 </Text>
                 <Text style={styles.alertBTCText}>
-                  {productA.isBTC ? productA.brandName : productB.brandName}{" "}
+                  {compareA.isBTC ? compareA.brandName : compareB.brandName}{" "}
                   contains pseudoephedrine. Valid ID required. Purchase limits
                   apply.
                 </Text>
               </View>
             )}
 
-            {/* Concentration warning */}
             {concDiffers && (
               <View style={styles.alertWarn}>
                 <Text style={styles.alertWarnText}>
@@ -259,14 +248,13 @@ export default function CompareScreen() {
               </View>
             )}
 
-            {/* Difference highlight */}
             {hasDiff && (
               <View style={styles.diffBox}>
                 <Text style={styles.diffTitle}>Key differences</Text>
                 {uniqueToA.length > 0 && (
                   <Text style={styles.diffLine}>
                     <Text style={styles.diffProd}>
-                      {productA.brandName} only:{" "}
+                      {compareA.brandName} only:{" "}
                     </Text>
                     {uniqueToA
                       .map((n) => n.charAt(0).toUpperCase() + n.slice(1))
@@ -276,7 +264,7 @@ export default function CompareScreen() {
                 {uniqueToB.length > 0 && (
                   <Text style={styles.diffLine}>
                     <Text style={styles.diffProd}>
-                      {productB.brandName} only:{" "}
+                      {compareB.brandName} only:{" "}
                     </Text>
                     {uniqueToB
                       .map((n) => n.charAt(0).toUpperCase() + n.slice(1))
@@ -294,28 +282,25 @@ export default function CompareScreen() {
               </View>
             )}
 
-            {/* Side by side table */}
             <View style={styles.table}>
-              {/* Header */}
               <View style={styles.tableHead}>
                 <Text style={styles.thCell}></Text>
                 <Text style={styles.thCell} numberOfLines={1}>
-                  {productA.brandName}
+                  {compareA.brandName}
                 </Text>
                 <Text style={styles.thCell} numberOfLines={1}>
-                  {productB.brandName}
+                  {compareB.brandName}
                 </Text>
               </View>
 
-              {/* Ingredients rows */}
               {Array.from({
                 length: Math.max(
-                  productA.ingredients.length,
-                  productB.ingredients.length,
+                  compareA.ingredients.length,
+                  compareB.ingredients.length,
                 ),
               }).map((_, i) => {
-                const ingA = productA.ingredients[i];
-                const ingB = productB.ingredients[i];
+                const ingA = compareA.ingredients[i];
+                const ingB = compareB.ingredients[i];
                 const nameA = ingA?.name.toLowerCase() || "";
                 const nameB = ingB?.name.toLowerCase() || "";
                 const isUniqueA = ingA && !namesB.includes(nameA);
@@ -339,31 +324,29 @@ export default function CompareScreen() {
                 );
               })}
 
-              {/* Purpose */}
               <View style={styles.tableRow}>
                 <Text style={styles.tdLabel}>Purpose</Text>
                 <Text style={styles.tdCell} numberOfLines={3}>
-                  {productA.ingredients
+                  {compareA.ingredients
                     .map((i) => i.purpose)
                     .filter(Boolean)
                     .join("\n") || "—"}
                 </Text>
                 <Text style={styles.tdCell} numberOfLines={3}>
-                  {productB.ingredients
+                  {compareB.ingredients
                     .map((i) => i.purpose)
                     .filter(Boolean)
                     .join("\n") || "—"}
                 </Text>
               </View>
 
-              {/* Concentration */}
               <View style={styles.tableRow}>
                 <Text style={styles.tdLabel}>Concentration</Text>
                 <Text
                   style={[styles.tdCell, concDiffers && styles.tdFlag]}
                   numberOfLines={2}
                 >
-                  {productA.ingredients
+                  {compareA.ingredients
                     .map((i) => i.concentration)
                     .filter(Boolean)
                     .join("\n") || "—"}
@@ -372,40 +355,41 @@ export default function CompareScreen() {
                   style={[styles.tdCell, concDiffers && styles.tdFlag]}
                   numberOfLines={2}
                 >
-                  {productB.ingredients
+                  {compareB.ingredients
                     .map((i) => i.concentration)
                     .filter(Boolean)
                     .join("\n") || "—"}
                 </Text>
               </View>
 
-              {/* BTC */}
               <View style={styles.tableRow}>
                 <Text style={styles.tdLabel}>ID required</Text>
-                <Text style={[styles.tdCell, productA.isBTC && styles.tdFlag]}>
-                  {productA.isBTC ? "Yes" : "No"}
+                <Text style={[styles.tdCell, compareA.isBTC && styles.tdFlag]}>
+                  {compareA.isBTC ? "Yes" : "No"}
                 </Text>
-                <Text style={[styles.tdCell, productB.isBTC && styles.tdFlag]}>
-                  {productB.isBTC ? "Yes" : "No"}
+                <Text style={[styles.tdCell, compareB.isBTC && styles.tdFlag]}>
+                  {compareB.isBTC ? "Yes" : "No"}
                 </Text>
               </View>
 
-              {/* Best price */}
               <View style={[styles.tableRow, styles.tableRowLast]}>
                 <Text style={styles.tdLabel}>Best price</Text>
-                <Text style={styles.tdCell}>{productA.bestPrice}</Text>
-                <Text style={styles.tdCell}>{productB.bestPrice}</Text>
+                <Text style={styles.tdCell}>
+                  {(compareA as any).bestPrice || "—"}
+                </Text>
+                <Text style={styles.tdCell}>
+                  {(compareB as any).bestPrice || "—"}
+                </Text>
               </View>
             </View>
 
-            <TouchableOpacity style={styles.clearBtn} onPress={reset}>
+            <TouchableOpacity style={styles.clearBtn} onPress={clearCompare}>
               <Text style={styles.clearBtnText}>Clear comparison</Text>
             </TouchableOpacity>
           </View>
         )}
       </View>
 
-      {/* Search modal */}
       <Modal visible={modalVisible} transparent animationType="slide">
         <KeyboardAvoidingView
           behavior={Platform.OS === "ios" ? "padding" : "height"}
@@ -452,7 +436,6 @@ export default function CompareScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#f5f5f5" },
   inner: { padding: 16 },
-
   slotRow: { flexDirection: "row", gap: 10, marginBottom: 16 },
   slot: {
     flex: 1,
@@ -478,7 +461,19 @@ const styles = StyleSheet.create({
   slotName: { fontSize: 14, fontWeight: "600", color: "#111", lineHeight: 20 },
   slotForm: { fontSize: 12, color: "#666", marginTop: 2 },
   slotChange: { fontSize: 11, color: "#185FA5", marginTop: 6 },
-
+  emptyHint: {
+    backgroundColor: "#fff",
+    borderRadius: 12,
+    padding: 16,
+    borderWidth: 0.5,
+    borderColor: "#ddd",
+  },
+  emptyHintText: {
+    fontSize: 15,
+    color: "#666",
+    lineHeight: 22,
+    textAlign: "center",
+  },
   alertBTC: {
     backgroundColor: "#FCEBEB",
     borderLeftWidth: 3,
@@ -503,7 +498,6 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   alertWarnText: { fontSize: 14, color: "#633806", lineHeight: 20 },
-
   diffBox: {
     backgroundColor: "#E6F1FB",
     borderRadius: 10,
@@ -519,7 +513,6 @@ const styles = StyleSheet.create({
   diffLine: { fontSize: 14, color: "#111", lineHeight: 22 },
   diffProd: { fontWeight: "600", color: "#185FA5" },
   diffShared: { fontWeight: "600", color: "#3B6D11" },
-
   table: {
     backgroundColor: "#fff",
     borderRadius: 12,
@@ -568,7 +561,6 @@ const styles = StyleSheet.create({
   },
   tdUnique: { backgroundColor: "#E6F1FB", color: "#0C447C" },
   tdFlag: { backgroundColor: "#FAEEDA", color: "#633806" },
-
   clearBtn: {
     borderWidth: 0.5,
     borderColor: "#ccc",
@@ -578,15 +570,12 @@ const styles = StyleSheet.create({
     backgroundColor: "#fff",
   },
   clearBtnText: { fontSize: 14, color: "#666" },
-
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.5)",
     justifyContent: "flex-end",
   },
-  modalDismiss: {
-    flex: 1,
-  },
+  modalDismiss: { flex: 1 },
   modalBox: {
     backgroundColor: "#fff",
     borderTopLeftRadius: 20,

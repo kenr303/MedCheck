@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -10,6 +10,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import { useMedStore } from "../../store/useMedStore";
 
 type PriceItem = {
   name: string;
@@ -27,7 +28,6 @@ type SearchedProduct = {
   items: PriceItem[];
 };
 
-// Static price database — will be replaced with live API later
 const PRICE_DB: Record<string, SearchedProduct> = {
   acetaminophen: {
     genericName: "Acetaminophen",
@@ -403,7 +403,6 @@ const PRICE_DB: Record<string, SearchedProduct> = {
   },
 };
 
-// Alias map so brand names also work
 const ALIASES: Record<string, string> = {
   tylenol: "acetaminophen",
   advil: "ibuprofen",
@@ -415,35 +414,46 @@ const ALIASES: Record<string, string> = {
 };
 
 export default function PricesScreen() {
+  const { currentProduct } = useMedStore();
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<SearchedProduct | null>(null);
+
+  // Auto-load if navigated from Lookup tab
+  useEffect(() => {
+    if (currentProduct?.genericKey) {
+      const key = currentProduct.genericKey;
+      const found = PRICE_DB[key] || PRICE_DB[ALIASES[key]];
+      if (found) {
+        setQuery(currentProduct.brandName);
+        setResult({
+          ...found,
+          items: [...found.items].sort((a, b) => a.price - b.price),
+        });
+      }
+    }
+  }, [currentProduct]);
 
   const searchPrices = () => {
     if (!query.trim()) return;
     setLoading(true);
     setResult(null);
-
     setTimeout(() => {
       const key = query.trim().toLowerCase();
       const resolvedKey = ALIASES[key] || key;
       const found = PRICE_DB[resolvedKey];
-
       if (!found) {
         Alert.alert(
           "Not found",
-          "Prices not available yet for this product.\n\nCurrently available:\n• Acetaminophen (Tylenol)\n• Ibuprofen (Advil)\n• Loratadine (Claritin)\n• Cetirizine (Zyrtec)\n• Omeprazole (Prilosec)",
+          "Prices not available yet.\n\nCurrently available:\n• Acetaminophen (Tylenol)\n• Ibuprofen (Advil)\n• Loratadine (Claritin)\n• Cetirizine (Zyrtec)\n• Omeprazole (Prilosec)",
         );
         setLoading(false);
         return;
       }
-
-      // Sort by price ascending
-      const sorted = {
+      setResult({
         ...found,
         items: [...found.items].sort((a, b) => a.price - b.price),
-      };
-      setResult(sorted);
+      });
       setLoading(false);
     }, 600);
   };
@@ -495,8 +505,6 @@ export default function PricesScreen() {
             <Text style={styles.productStrength}>
               {result.strength} · sorted by lowest price
             </Text>
-
-            {/* Best deal label */}
             <Text style={styles.bestLabel}>Best deal</Text>
 
             {result.items.map((item, i) => (
@@ -541,7 +549,6 @@ export default function PricesScreen() {
               </TouchableOpacity>
             ))}
 
-            {/* Savings box */}
             <View style={styles.savingsBox}>
               <View>
                 <Text style={styles.savingsLabel}>Max savings</Text>
@@ -608,10 +615,7 @@ const styles = StyleSheet.create({
     marginBottom: 10,
     gap: 12,
   },
-  priceCardBest: {
-    borderColor: "#1D9E75",
-    borderWidth: 1.5,
-  },
+  priceCardBest: { borderColor: "#1D9E75", borderWidth: 1.5 },
   pcLeft: { flex: 1, minWidth: 0 },
   pcName: { fontSize: 16, fontWeight: "600", color: "#111" },
   pcMeta: { fontSize: 13, color: "#666", marginTop: 3 },
