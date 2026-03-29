@@ -1,5 +1,5 @@
 import { CameraView, useCameraPermissions } from "expo-camera";
-import { useEffect, useState } from "react";
+import { useEffect, useRef } from "react";
 import { Modal, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
 type Props = {
@@ -10,15 +10,15 @@ type Props = {
 
 export default function BarcodeScanner({ visible, onClose, onScanned }: Props) {
   const [permission, requestPermission] = useCameraPermissions();
-  const [scanned, setScanned] = useState(false);
+  const hasScanned = useRef(false);
 
   useEffect(() => {
-    if (visible) setScanned(false);
+    if (visible) hasScanned.current = false;
   }, [visible]);
 
   const handleBarcode = ({ data }: { data: string }) => {
-    if (scanned) return;
-    setScanned(true);
+    if (hasScanned.current) return;
+    hasScanned.current = true;
     onScanned(data);
   };
 
@@ -52,7 +52,7 @@ export default function BarcodeScanner({ visible, onClose, onScanned }: Props) {
           barcodeScannerSettings={{
             barcodeTypes: ["upc_a", "upc_e", "ean13", "ean8"],
           }}
-          onBarcodeScanned={scanned ? undefined : handleBarcode}
+          onBarcodeScanned={handleBarcode}
         />
         <View style={styles.overlay}>
           <View style={styles.topDark} />

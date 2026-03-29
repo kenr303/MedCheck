@@ -75,11 +75,12 @@ async function lookupByQuery(query: string): Promise<any | null> {
 }
 
 async function lookupByUPC(upc: string): Promise<any | null> {
-  const urls = [
+  // Step 1: try OpenFDA directly by UPC/NDC
+  const fdaUrls = [
     `https://api.fda.gov/drug/label.json?search=openfda.upc:${upc}&limit=1`,
     `https://api.fda.gov/drug/label.json?search=openfda.package_ndc:${upc}&limit=1`,
   ];
-  for (const url of urls) {
+  for (const url of fdaUrls) {
     try {
       const res = await fetch(url);
       const data = await res.json();
@@ -88,6 +89,35 @@ async function lookupByUPC(upc: string): Promise<any | null> {
       continue;
     }
   }
+
+  // Step 2: use Open Food Facts / Open Product Data to get product name from UPC
+  try {
+    const res = await fetch(
+      `https://world.openfoodfacts.org/api/v0/product/${upc}.json`,
+    );
+    const data = await res.json();
+    if (data.status === 1 && data.product) {
+      const productName =
+        data.product.product_name || data.product.generic_name || "";
+      if (productName) {
+        // Now search FDA with that name
+        return await lookupByQuery(productName);
+      }
+    }
+  } catch {}
+
+  // Step 3: try UPC lookup via Open UPC database
+  try {
+    const res = await fetch(
+      `https://api.upcitemdb.com/prod/trial/lookup?upc=${upc}`,
+    );
+    const data = await res.json();
+    if (data.items?.length > 0) {
+      const name = data.items[0].title || "";
+      if (name) return await lookupByQuery(name);
+    }
+  } catch {}
+
   return null;
 }
 
@@ -128,11 +158,11 @@ export default function LookupScreen() {
   const [product, setProduct] = useState<Product | null>(null);
   const [scannerOpen, setScannerOpen] = useState(false);
 
-  const doLookup = async (r: any | null, fallback: string) => {
+  const finishLookup = (r: any | null, fallback: string) => {
     if (!r) {
       Alert.alert(
         "Not found",
-        "Try the generic name.\n\nExamples:\n• Tylenol → acetaminophen\n• Advil → ibuprofen\n• Claritin → loratadine\n• Zyrtec → cetirizine",
+        "Try the generic name instead.\n\nExamples:\n• Tylenol → acetaminophen\n• Advil → ibuprofen\n• Claritin → loratadine\n• Zyrtec → cetirizine\n• Nexium → omeprazole",
       );
       setLoading(false);
       return;
@@ -146,7 +176,7 @@ export default function LookupScreen() {
     setLoading(true);
     setProduct(null);
     const r = await lookupByQuery(query.trim());
-    doLookup(r, query.trim());
+    finishLookup(r, query.trim());
   };
 
   const handleScanned = async (upc: string) => {
@@ -154,15 +184,13 @@ export default function LookupScreen() {
     setLoading(true);
     setProduct(null);
     setQuery(upc);
-    let r = await lookupByUPC(upc);
-    if (!r) r = await lookupByQuery(upc);
-    doLookup(r, upc);
+    const r = await lookupByUPC(upc);
+    finishLookup(r, upc);
   };
 
   return (
     <ScrollView style={styles.container} keyboardShouldPersistTaps="handled">
       <View style={styles.inner}>
-        {/* Scan button */}
         <TouchableOpacity
           style={styles.scanBtn}
           onPress={() => setScannerOpen(true)}
@@ -197,7 +225,7 @@ export default function LookupScreen() {
         {loading && (
           <View style={styles.loadingWrap}>
             <ActivityIndicator size="large" color="#185FA5" />
-            <Text style={styles.loadingText}>Searching FDA database...</Text>
+            <Text style={styles.loadingText}>Looking up product...</Text>
           </View>
         )}
 
