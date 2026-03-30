@@ -12,6 +12,7 @@ import {
 } from "react-native";
 import BarcodeScanner from "../../components/BarcodeScanner";
 import { lookupSupplement } from "../../store/supplementData";
+import { COLOR, FONT, RADIUS, SPACE } from "../../store/theme";
 import { Ingredient, MedProduct, useMedStore } from "../../store/useMedStore";
 
 function cleanIngredientName(raw: string): {
@@ -47,7 +48,6 @@ function parseIngredients(r: any): Ingredient[] {
   });
 }
 
-// Search OpenFDA drug database — returns both product and raw FDA result
 async function lookupFDA(
   query: string,
 ): Promise<{ product: MedProduct; raw: any } | null> {
@@ -110,7 +110,6 @@ async function lookupFDA(
   return null;
 }
 
-// Search NIH DSLD supplement database
 async function lookupDSLD(query: string): Promise<MedProduct | null> {
   try {
     const q = encodeURIComponent(query.trim());
@@ -118,16 +117,12 @@ async function lookupDSLD(query: string): Promise<MedProduct | null> {
       `https://api.ods.od.nih.gov/dsld/v9/browse-products?name=${q}&limit=1`,
     );
     const data = await res.json();
-
     if (!data.data?.length) return null;
     const product = data.data[0];
-
-    // Get full product details including ingredients
     const detailRes = await fetch(
       `https://api.ods.od.nih.gov/dsld/v9/product/${product.id}/label-info`,
     );
     const detail = await detailRes.json();
-
     const ingredients: Ingredient[] = (detail.servingIngredients || [])
       .map((ing: any) => ({
         name: ing.ingredientName || ing.name || "",
@@ -137,26 +132,15 @@ async function lookupDSLD(query: string): Promise<MedProduct | null> {
         purpose: ing.role || "",
       }))
       .filter((i: Ingredient) => i.name);
-
-    if (ingredients.length === 0) {
-      // Fall back to basic ingredient list from browse result
-      (product.ingredients || []).forEach((name: string) => {
-        ingredients.push({ name, concentration: "", purpose: "" });
-      });
-    }
-
     const servingSizeQty = detail.servingSize?.quantity || "";
     const servingSizeUnit = detail.servingSize?.unit || "";
     const servingSizeAlert =
       (parseInt(servingSizeQty) > 1 &&
         servingSizeUnit.toLowerCase().includes("tablet")) ||
       (parseInt(servingSizeQty) > 1 &&
-        servingSizeUnit.toLowerCase().includes("capsule")) ||
-      (parseInt(servingSizeQty) > 1 &&
-        servingSizeUnit.toLowerCase().includes("softgel"))
-        ? `Serving size is ${servingSizeQty} ${servingSizeUnit} — not 1. Check label carefully.`
+        servingSizeUnit.toLowerCase().includes("capsule"))
+        ? `Serving size is ${servingSizeQty} ${servingSizeUnit} — not 1.`
         : null;
-
     return {
       brandName: product.brandName || product.name || query,
       manufacturer: product.manufacturer || "",
@@ -180,7 +164,10 @@ async function lookupByUPC(upc: string): Promise<MedProduct | null> {
     try {
       const res = await fetch(url);
       const data = await res.json();
-      if (data.results?.length > 0) return await lookupFDA(upc);
+      if (data.results?.length > 0) {
+        const r = await lookupFDA(upc);
+        return r?.product || null;
+      }
     } catch {
       continue;
     }
@@ -194,7 +181,7 @@ async function lookupByUPC(upc: string): Promise<MedProduct | null> {
       const name = data.product.product_name || data.product.generic_name || "";
       if (name) {
         const fdaResult = await lookupFDA(name);
-        if (fdaResult) return fdaResult;
+        if (fdaResult) return fdaResult.product;
         return await lookupDSLD(name);
       }
     }
@@ -208,7 +195,7 @@ async function lookupByUPC(upc: string): Promise<MedProduct | null> {
       const name = data.items[0].title || "";
       if (name) {
         const fdaResult = await lookupFDA(name);
-        if (fdaResult) return fdaResult;
+        if (fdaResult) return fdaResult.product;
         return await lookupDSLD(name);
       }
     }
@@ -216,7 +203,6 @@ async function lookupByUPC(upc: string): Promise<MedProduct | null> {
   return null;
 }
 
-// Keywords that suggest supplement vs drug
 const SUPPLEMENT_KEYWORDS = [
   "vitamin",
   "calcium",
@@ -290,9 +276,7 @@ export default function LookupScreen() {
     setLoading(true);
     setProduct(null);
     setSource(null);
-
     const q = query.trim();
-
     if (looksLikeSupplement(q)) {
       const local = lookupSupplement(q);
       if (local) {
@@ -366,23 +350,23 @@ export default function LookupScreen() {
   };
 
   return (
-    <ScrollView style={styles.container} keyboardShouldPersistTaps="handled">
-      <View style={styles.inner}>
+    <ScrollView style={S.container} keyboardShouldPersistTaps="handled">
+      <View style={S.inner}>
         <TouchableOpacity
-          style={styles.scanBtn}
+          style={S.scanBtn}
           onPress={() => setScannerOpen(true)}
         >
-          <Text style={styles.scanIcon}>▦</Text>
-          <Text style={styles.scanBtnText}>Scan barcode</Text>
+          <Text style={S.scanIcon}>▦</Text>
+          <Text style={S.scanBtnText}>Scan barcode</Text>
         </TouchableOpacity>
 
-        <Text style={styles.divider}>— or search by name —</Text>
+        <Text style={S.divider}>— or search by name —</Text>
 
-        <View style={styles.searchRow}>
+        <View style={S.searchRow}>
           <TextInput
-            style={styles.input}
+            style={S.input}
             placeholder="Drug or supplement name..."
-            placeholderTextColor="#888"
+            placeholderTextColor={COLOR.textMuted}
             value={query}
             onChangeText={setQuery}
             onSubmitEditing={searchProduct}
@@ -390,52 +374,50 @@ export default function LookupScreen() {
             autoCorrect={false}
             autoCapitalize="none"
           />
-          <TouchableOpacity style={styles.searchBtn} onPress={searchProduct}>
-            <Text style={styles.searchBtnText}>Search</Text>
+          <TouchableOpacity style={S.searchBtn} onPress={searchProduct}>
+            <Text style={S.searchBtnText}>Search</Text>
           </TouchableOpacity>
         </View>
 
-        <Text style={styles.hint}>
+        <Text style={S.hint}>
           Drugs: acetaminophen, ibuprofen, loratadine{"\n"}
           Supplements: vitamin c, calcium, fish oil, melatonin
         </Text>
 
         {loading && (
-          <View style={styles.loadingWrap}>
-            <ActivityIndicator size="large" color="#185FA5" />
-            <Text style={styles.loadingText}>Searching databases...</Text>
+          <View style={S.loadingWrap}>
+            <ActivityIndicator size="large" color={COLOR.primaryMid} />
+            <Text style={S.loadingText}>Searching databases...</Text>
           </View>
         )}
 
         {product && (
-          <View>
-            <View style={styles.productHeader}>
-              <View style={styles.productHeaderLeft}>
-                <Text style={styles.productName}>{product.brandName}</Text>
+          <View style={S.resultWrap}>
+            <View style={S.productHeader}>
+              <View style={S.productHeaderLeft}>
+                <Text style={S.productName}>{product.brandName}</Text>
                 {product.form ? (
-                  <Text style={styles.productForm}>{product.form}</Text>
+                  <Text style={S.productForm}>{product.form}</Text>
                 ) : null}
                 {product.manufacturer ? (
-                  <Text style={styles.manufacturer}>
-                    {product.manufacturer}
-                  </Text>
+                  <Text style={S.manufacturer}>{product.manufacturer}</Text>
                 ) : null}
               </View>
               {source && (
                 <View
                   style={[
-                    styles.sourceBadge,
+                    S.sourceBadge,
                     source === "supplement"
-                      ? styles.sourceBadgeSupp
-                      : styles.sourceBadgeDrug,
+                      ? S.sourceBadgeSupp
+                      : S.sourceBadgeDrug,
                   ]}
                 >
                   <Text
                     style={[
-                      styles.sourceBadgeText,
+                      S.sourceBadgeText,
                       source === "supplement"
-                        ? styles.sourceBadgeSuppText
-                        : styles.sourceBadgeDrugText,
+                        ? S.sourceBadgeSuppText
+                        : S.sourceBadgeDrugText,
                     ]}
                   >
                     {source === "supplement" ? "Supplement" : "OTC Drug"}
@@ -445,86 +427,78 @@ export default function LookupScreen() {
             </View>
 
             {product.isBTC && (
-              <View style={styles.alertBTC}>
-                <Text style={styles.alertBTCTitle}>
-                  Behind-the-counter product
-                </Text>
-                <Text style={styles.alertBTCText}>
+              <View style={S.alertBTC}>
+                <Text style={S.alertBTCTitle}>Behind-the-counter product</Text>
+                <Text style={S.alertBTCText}>
                   Valid photo ID required. Federal purchase limit applies.
                 </Text>
               </View>
             )}
 
             {product.servingSizeAlert && (
-              <View style={styles.alertWarn}>
-                <Text style={styles.alertWarnText}>
+              <View style={S.alertWarn}>
+                <Text style={S.alertWarnText}>
                   ⚠ {product.servingSizeAlert}
                 </Text>
               </View>
             )}
 
             {product.ingredients.length > 0 ? (
-              <View style={styles.card}>
-                <View style={styles.cardHeader}>
-                  <Text style={styles.cardHeaderLeft}>
+              <View style={S.card}>
+                <View style={S.cardHeader}>
+                  <Text style={S.cardHeaderLeft}>
                     {source === "supplement"
                       ? "Supplement facts"
                       : "Active ingredients"}
                   </Text>
-                  <Text style={styles.cardHeaderRight}>Purpose</Text>
+                  <Text style={S.cardHeaderRight}>Purpose</Text>
                 </View>
                 {product.ingredients.map((ing, i) => (
                   <View
                     key={i}
                     style={[
-                      styles.ingrRow,
-                      i === product.ingredients.length - 1 &&
-                        styles.ingrRowLast,
+                      S.ingrRow,
+                      i === product.ingredients.length - 1 && S.ingrRowLast,
                     ]}
                   >
-                    <View style={styles.ingrLeft}>
-                      <Text style={styles.ingrNum}>{i + 1}.</Text>
-                      <View style={styles.ingrNameWrap}>
-                        <Text style={styles.ingrName}>{ing.name}</Text>
+                    <View style={S.ingrLeft}>
+                      <Text style={S.ingrNum}>{i + 1}.</Text>
+                      <View style={S.ingrNameWrap}>
+                        <Text style={S.ingrName}>{ing.name}</Text>
                         {ing.concentration ? (
-                          <Text style={styles.ingrConc}>
-                            {ing.concentration}
-                          </Text>
+                          <Text style={S.ingrConc}>{ing.concentration}</Text>
                         ) : null}
                       </View>
                     </View>
                     {ing.purpose ? (
-                      <Text style={styles.ingrPurpose}>{ing.purpose}</Text>
+                      <Text style={S.ingrPurpose}>{ing.purpose}</Text>
                     ) : null}
                   </View>
                 ))}
               </View>
             ) : (
-              <View style={styles.alertWarn}>
-                <Text style={styles.alertWarnText}>
+              <View style={S.alertWarn}>
+                <Text style={S.alertWarnText}>
                   Ingredient details not available for this product.
                 </Text>
               </View>
             )}
 
-            <View style={styles.actionRow}>
-              <TouchableOpacity
-                style={styles.actionBtn}
-                onPress={handleSeePrices}
-              >
-                <Text style={styles.actionBtnText}>See prices</Text>
+            <View style={S.actionRow}>
+              <TouchableOpacity style={S.actionBtn} onPress={handleSeePrices}>
+                <Text style={S.actionBtnText}>See prices</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={styles.actionBtn}
+                style={S.actionBtn}
                 onPress={handleAddToCompare}
               >
-                <Text style={styles.actionBtnText}>Add to compare</Text>
+                <Text style={S.actionBtnText}>Add to compare</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[styles.actionBtn, styles.actionBtnGray]}
+                style={[S.actionBtn, S.actionBtnGray]}
                 onPress={() => router.push("/product-detail")}
               >
-                <Text style={[styles.actionBtnText, styles.actionBtnGrayText]}>
+                <Text style={[S.actionBtnText, S.actionBtnGrayText]}>
                   More about this
                 </Text>
               </TouchableOpacity>
@@ -542,114 +516,139 @@ export default function LookupScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#f5f5f5" },
-  inner: { padding: 16 },
+const S = StyleSheet.create({
+  container: { flex: 1, backgroundColor: COLOR.bg },
+  inner: { padding: SPACE.md },
+
   scanBtn: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: 10,
-    backgroundColor: "#fff",
-    borderRadius: 12,
+    gap: SPACE.sm,
+    backgroundColor: COLOR.white,
+    borderRadius: RADIUS.md,
     borderWidth: 1.5,
     borderColor: "#ccc",
     borderStyle: "dashed",
-    paddingVertical: 16,
-    marginBottom: 12,
+    paddingVertical: 18,
+    marginBottom: 14,
   },
-  scanIcon: { fontSize: 22, color: "#185FA5" },
-  scanBtnText: { fontSize: 16, color: "#185FA5", fontWeight: "500" },
+  scanIcon: { fontSize: 24, color: COLOR.primaryMid },
+  scanBtnText: {
+    fontSize: FONT.md,
+    color: COLOR.primaryMid,
+    fontWeight: "500",
+  },
+
   divider: {
     textAlign: "center",
-    fontSize: 13,
-    color: "#aaa",
-    marginBottom: 12,
+    fontSize: FONT.sm,
+    color: COLOR.textMuted,
+    marginBottom: 14,
   },
-  searchRow: { flexDirection: "row", gap: 8, marginBottom: 6 },
+
+  searchRow: { flexDirection: "row", gap: SPACE.sm, marginBottom: SPACE.sm },
   input: {
     flex: 1,
-    backgroundColor: "#fff",
-    borderRadius: 10,
+    backgroundColor: COLOR.white,
+    borderRadius: RADIUS.sm,
     borderWidth: 1.5,
     borderColor: "#ccc",
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    fontSize: 17,
-    color: "#111",
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    fontSize: FONT.md,
+    color: COLOR.text,
   },
   searchBtn: {
-    backgroundColor: "#185FA5",
-    borderRadius: 10,
-    paddingHorizontal: 18,
+    backgroundColor: COLOR.primaryMid,
+    borderRadius: RADIUS.sm,
+    paddingHorizontal: 20,
     justifyContent: "center",
   },
-  searchBtnText: { color: "#fff", fontSize: 16, fontWeight: "500" },
-  hint: { fontSize: 12, color: "#999", marginBottom: 16, lineHeight: 18 },
-  loadingWrap: { alignItems: "center", marginTop: 40, gap: 12 },
-  loadingText: { fontSize: 15, color: "#666" },
+  searchBtnText: { color: COLOR.white, fontSize: FONT.md, fontWeight: "500" },
+
+  hint: {
+    fontSize: FONT.xs,
+    color: COLOR.textMuted,
+    marginBottom: SPACE.md,
+    lineHeight: 20,
+  },
+
+  loadingWrap: { alignItems: "center", marginTop: 48, gap: 14 },
+  loadingText: { fontSize: FONT.md, color: COLOR.textSub },
+
+  resultWrap: { marginTop: SPACE.sm },
   productHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "flex-start",
-    marginBottom: 4,
+    marginBottom: SPACE.sm,
   },
-  productHeaderLeft: { flex: 1, marginRight: 8 },
+  productHeaderLeft: { flex: 1, marginRight: SPACE.sm },
   productName: {
-    fontSize: 22,
+    fontSize: FONT.xl,
     fontWeight: "600",
-    color: "#111",
-    lineHeight: 28,
+    color: COLOR.text,
+    lineHeight: 30,
     textTransform: "capitalize",
   },
   productForm: {
-    fontSize: 15,
-    color: "#666",
-    marginTop: 2,
+    fontSize: FONT.sm,
+    color: COLOR.textSub,
+    marginTop: 3,
     textTransform: "capitalize",
   },
-  manufacturer: { fontSize: 14, color: "#888", marginTop: 2, marginBottom: 14 },
+  manufacturer: {
+    fontSize: FONT.sm,
+    color: COLOR.textMuted,
+    marginTop: 2,
+    marginBottom: SPACE.md,
+  },
+
   sourceBadge: {
     borderRadius: 10,
     paddingHorizontal: 10,
-    paddingVertical: 4,
+    paddingVertical: 5,
     alignSelf: "flex-start",
     marginTop: 4,
   },
-  sourceBadgeDrug: { backgroundColor: "#E6F1FB" },
-  sourceBadgeSupp: { backgroundColor: "#EAF3DE" },
-  sourceBadgeText: { fontSize: 12, fontWeight: "600" },
-  sourceBadgeDrugText: { color: "#0C447C" },
-  sourceBadgeSuppText: { color: "#27500A" },
+  sourceBadgeDrug: { backgroundColor: COLOR.primaryLight },
+  sourceBadgeSupp: { backgroundColor: COLOR.successLight },
+  sourceBadgeText: { fontSize: FONT.xs, fontWeight: "600" },
+  sourceBadgeDrugText: { color: COLOR.primary },
+  sourceBadgeSuppText: { color: COLOR.success },
+
   alertBTC: {
-    backgroundColor: "#FCEBEB",
+    backgroundColor: COLOR.dangerLight,
     borderLeftWidth: 3,
     borderLeftColor: "#E24B4A",
-    borderRadius: 8,
-    padding: 12,
-    marginBottom: 12,
+    borderRadius: RADIUS.sm,
+    padding: 14,
+    marginBottom: 14,
   },
   alertBTCTitle: {
-    fontSize: 15,
+    fontSize: FONT.md,
     fontWeight: "600",
-    color: "#501313",
-    marginBottom: 4,
+    color: COLOR.danger,
+    marginBottom: 5,
   },
-  alertBTCText: { fontSize: 14, color: "#501313", lineHeight: 20 },
+  alertBTCText: { fontSize: FONT.sm, color: COLOR.danger, lineHeight: 22 },
+
   alertWarn: {
-    backgroundColor: "#FAEEDA",
+    backgroundColor: COLOR.warningLight,
     borderLeftWidth: 3,
     borderLeftColor: "#EF9F27",
-    borderRadius: 8,
-    padding: 12,
-    marginBottom: 12,
+    borderRadius: RADIUS.sm,
+    padding: 14,
+    marginBottom: 14,
   },
-  alertWarnText: { fontSize: 15, color: "#633806", lineHeight: 22 },
+  alertWarnText: { fontSize: FONT.md, color: COLOR.warning, lineHeight: 24 },
+
   card: {
-    backgroundColor: "#fff",
-    borderRadius: 12,
+    backgroundColor: COLOR.white,
+    borderRadius: RADIUS.md,
     borderWidth: 0.5,
-    borderColor: "#ddd",
+    borderColor: COLOR.border,
     marginBottom: 14,
     overflow: "hidden",
   },
@@ -657,60 +656,76 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     backgroundColor: "#f0f0f0",
-    paddingHorizontal: 14,
-    paddingVertical: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
     borderBottomWidth: 0.5,
-    borderBottomColor: "#ddd",
+    borderBottomColor: COLOR.border,
   },
   cardHeaderLeft: {
-    fontSize: 12,
+    fontSize: FONT.xs,
     fontWeight: "600",
-    color: "#555",
+    color: COLOR.textSub,
     textTransform: "uppercase",
     letterSpacing: 0.5,
   },
   cardHeaderRight: {
-    fontSize: 12,
+    fontSize: FONT.xs,
     fontWeight: "600",
-    color: "#555",
+    color: COLOR.textSub,
     textTransform: "uppercase",
     letterSpacing: 0.5,
   },
+
   ingrRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "flex-start",
-    paddingHorizontal: 14,
-    paddingVertical: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
     borderBottomWidth: 0.5,
     borderBottomColor: "#eee",
   },
   ingrRowLast: { borderBottomWidth: 0 },
-  ingrLeft: { flexDirection: "row", gap: 8, flex: 1, marginRight: 8 },
+  ingrLeft: { flexDirection: "row", gap: 10, flex: 1, marginRight: 10 },
   ingrNameWrap: { flex: 1 },
-  ingrNum: { fontSize: 14, color: "#999", minWidth: 20, marginTop: 2 },
+  ingrNum: {
+    fontSize: FONT.sm,
+    color: COLOR.textMuted,
+    minWidth: 22,
+    marginTop: 2,
+  },
   ingrName: {
-    fontSize: 16,
+    fontSize: FONT.lg,
     fontWeight: "600",
-    color: "#111",
+    color: COLOR.text,
     textTransform: "capitalize",
   },
-  ingrConc: { fontSize: 13, color: "#666", marginTop: 2 },
+  ingrConc: { fontSize: FONT.sm, color: COLOR.textSub, marginTop: 3 },
   ingrPurpose: {
-    fontSize: 13,
-    color: "#555",
+    fontSize: FONT.sm,
+    color: COLOR.textSub,
     textAlign: "right",
     maxWidth: 130,
   },
-  actionRow: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 4 },
+
+  actionRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 10,
+    marginTop: SPACE.sm,
+  },
   actionBtn: {
     borderWidth: 1.5,
-    borderColor: "#185FA5",
-    borderRadius: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
+    borderColor: COLOR.primaryMid,
+    borderRadius: RADIUS.sm,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
   },
-  actionBtnText: { fontSize: 14, fontWeight: "500", color: "#185FA5" },
+  actionBtnText: {
+    fontSize: FONT.md,
+    fontWeight: "500",
+    color: COLOR.primaryMid,
+  },
   actionBtnGray: { borderColor: "#ccc" },
-  actionBtnGrayText: { color: "#666" },
+  actionBtnGrayText: { color: COLOR.textSub },
 });
