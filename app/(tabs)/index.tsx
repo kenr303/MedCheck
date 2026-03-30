@@ -11,6 +11,7 @@ import {
   View,
 } from "react-native";
 import BarcodeScanner from "../../components/BarcodeScanner";
+import { lookupSupplement } from "../../store/supplementData";
 import { Ingredient, MedProduct, useMedStore } from "../../store/useMedStore";
 
 function cleanIngredientName(raw: string): {
@@ -277,7 +278,13 @@ export default function LookupScreen() {
     const q = query.trim();
 
     if (looksLikeSupplement(q)) {
-      // Try supplement database first
+      // Try local supplement DB first (always works)
+      const local = lookupSupplement(q);
+      if (local) {
+        finishLookup(local, "supplement");
+        return;
+      }
+      // Try NIH DSLD API
       const supp = await lookupDSLD(q);
       if (supp) {
         finishLookup(supp, "supplement");
@@ -293,7 +300,13 @@ export default function LookupScreen() {
         finishLookup(drug, "drug");
         return;
       }
-      // Fall back to supplement database
+      // Try local supplement DB
+      const local = lookupSupplement(q);
+      if (local) {
+        finishLookup(local, "supplement");
+        return;
+      }
+      // Try NIH DSLD API
       const supp = await lookupDSLD(q);
       finishLookup(supp, "supplement");
     }
