@@ -219,7 +219,7 @@ export default function CompareScreen() {
           <View style={styles.emptyHint}>
             <Text style={styles.emptyHintText}>
               Tap a slot to search, or find a product in the Lookup tab and tap
-              "Add to compare".
+              Add to compare.
             </Text>
           </View>
         )}

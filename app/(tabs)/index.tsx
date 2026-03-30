@@ -512,6 +512,7 @@ export default function LookupScreen() {
               </TouchableOpacity>
               <TouchableOpacity
                 style={[styles.actionBtn, styles.actionBtnGray]}
+                onPress={() => router.push("/product-detail")}
               >
                 <Text style={[styles.actionBtnText, styles.actionBtnGrayText]}>
                   More about this
