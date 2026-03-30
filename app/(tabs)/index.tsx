@@ -46,7 +46,8 @@ function parseIngredients(r: any): Ingredient[] {
   });
 }
 
-async function lookupByQuery(query: string): Promise<any | null> {
+// Search OpenFDA drug database
+async function lookupFDA(query: string): Promise<MedProduct | null> {
   const q = encodeURIComponent(query.trim());
   const urls = [
     `https://api.fda.gov/drug/label.json?search=openfda.brand_name:${q}&limit=1`,
@@ -58,7 +59,44 @@ async function lookupByQuery(query: string): Promise<any | null> {
     try {
       const res = await fetch(url);
       const data = await res.json();
-      if (data.results?.length > 0) return data.results[0];
+      if (data.results?.length > 0) {
+        const r = data.results[0];
+        const ingredients = parseIngredients(r);
+        if (ingredients.length === 0) continue;
+        const brandName =
+          r.openfda?.brand_name?.[0] ||
+          r.brand_name?.[0] ||
+          r.openfda?.generic_name?.[0] ||
+          query;
+        const manufacturer =
+          r.openfda?.manufacturer_name?.[0] || r.manufacturer_name?.[0] || "";
+        const form = (r.dosage_form?.[0] || "").toLowerCase();
+        const servingSizeRaw = (
+          r.dosage_and_administration?.[0] || ""
+        ).toLowerCase();
+        const servingSizeAlert =
+          servingSizeRaw.includes("2 tablet") ||
+          servingSizeRaw.includes("2 capsule") ||
+          servingSizeRaw.includes("two tablet") ||
+          servingSizeRaw.includes("two capsule")
+            ? "Dose requires 2 units — not 1. Check the label carefully."
+            : null;
+        const allText = JSON.stringify(r).toLowerCase();
+        const isBTC =
+          allText.includes("pseudoephedrine") || allText.includes("ephedrine");
+        const genericKey = (r.openfda?.generic_name?.[0] || "")
+          .toLowerCase()
+          .split(" ")[0];
+        return {
+          brandName,
+          manufacturer,
+          form,
+          ingredients,
+          servingSizeAlert,
+          isBTC,
+          genericKey,
+        };
+      }
     } catch {
       continue;
     }
@@ -66,7 +104,68 @@ async function lookupByQuery(query: string): Promise<any | null> {
   return null;
 }
 
-async function lookupByUPC(upc: string): Promise<any | null> {
+// Search NIH DSLD supplement database
+async function lookupDSLD(query: string): Promise<MedProduct | null> {
+  try {
+    const q = encodeURIComponent(query.trim());
+    const res = await fetch(
+      `https://api.ods.od.nih.gov/dsld/v9/browse-products?name=${q}&limit=1`,
+    );
+    const data = await res.json();
+
+    if (!data.data?.length) return null;
+    const product = data.data[0];
+
+    // Get full product details including ingredients
+    const detailRes = await fetch(
+      `https://api.ods.od.nih.gov/dsld/v9/product/${product.id}/label-info`,
+    );
+    const detail = await detailRes.json();
+
+    const ingredients: Ingredient[] = (detail.servingIngredients || [])
+      .map((ing: any) => ({
+        name: ing.ingredientName || ing.name || "",
+        concentration: ing.quantity
+          ? `${ing.quantity} ${ing.unit || ""}`.trim()
+          : "",
+        purpose: ing.role || "",
+      }))
+      .filter((i: Ingredient) => i.name);
+
+    if (ingredients.length === 0) {
+      // Fall back to basic ingredient list from browse result
+      (product.ingredients || []).forEach((name: string) => {
+        ingredients.push({ name, concentration: "", purpose: "" });
+      });
+    }
+
+    const servingSizeQty = detail.servingSize?.quantity || "";
+    const servingSizeUnit = detail.servingSize?.unit || "";
+    const servingSizeAlert =
+      (parseInt(servingSizeQty) > 1 &&
+        servingSizeUnit.toLowerCase().includes("tablet")) ||
+      (parseInt(servingSizeQty) > 1 &&
+        servingSizeUnit.toLowerCase().includes("capsule")) ||
+      (parseInt(servingSizeQty) > 1 &&
+        servingSizeUnit.toLowerCase().includes("softgel"))
+        ? `Serving size is ${servingSizeQty} ${servingSizeUnit} — not 1. Check label carefully.`
+        : null;
+
+    return {
+      brandName: product.brandName || product.name || query,
+      manufacturer: product.manufacturer || "",
+      form: servingSizeUnit || "supplement",
+      ingredients,
+      servingSizeAlert,
+      isBTC: false,
+      genericKey: "",
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function lookupByUPC(upc: string): Promise<MedProduct | null> {
   const fdaUrls = [
     `https://api.fda.gov/drug/label.json?search=openfda.upc:${upc}&limit=1`,
     `https://api.fda.gov/drug/label.json?search=openfda.package_ndc:${upc}&limit=1`,
@@ -75,7 +174,7 @@ async function lookupByUPC(upc: string): Promise<any | null> {
     try {
       const res = await fetch(url);
       const data = await res.json();
-      if (data.results?.length > 0) return data.results[0];
+      if (data.results?.length > 0) return await lookupFDA(upc);
     } catch {
       continue;
     }
@@ -87,7 +186,11 @@ async function lookupByUPC(upc: string): Promise<any | null> {
     const data = await res.json();
     if (data.status === 1 && data.product) {
       const name = data.product.product_name || data.product.generic_name || "";
-      if (name) return await lookupByQuery(name);
+      if (name) {
+        const fdaResult = await lookupFDA(name);
+        if (fdaResult) return fdaResult;
+        return await lookupDSLD(name);
+      }
     }
   } catch {}
   try {
@@ -97,45 +200,47 @@ async function lookupByUPC(upc: string): Promise<any | null> {
     const data = await res.json();
     if (data.items?.length > 0) {
       const name = data.items[0].title || "";
-      if (name) return await lookupByQuery(name);
+      if (name) {
+        const fdaResult = await lookupFDA(name);
+        if (fdaResult) return fdaResult;
+        return await lookupDSLD(name);
+      }
     }
   } catch {}
   return null;
 }
 
-function buildProduct(r: any, fallbackName: string): MedProduct {
-  const ingredients = parseIngredients(r);
-  const form = (r.dosage_form?.[0] || "").toLowerCase();
-  const brandName =
-    r.openfda?.brand_name?.[0] ||
-    r.brand_name?.[0] ||
-    r.openfda?.generic_name?.[0] ||
-    fallbackName;
-  const manufacturer =
-    r.openfda?.manufacturer_name?.[0] || r.manufacturer_name?.[0] || "";
-  const servingSizeRaw = (r.dosage_and_administration?.[0] || "").toLowerCase();
-  const servingSizeAlert =
-    servingSizeRaw.includes("2 tablet") ||
-    servingSizeRaw.includes("2 capsule") ||
-    servingSizeRaw.includes("two tablet") ||
-    servingSizeRaw.includes("two capsule")
-      ? "Dose requires 2 units — not 1. Check the label carefully."
-      : null;
-  const allText = JSON.stringify(r).toLowerCase();
-  const isBTC =
-    allText.includes("pseudoephedrine") || allText.includes("ephedrine");
-  const genericKey = (r.openfda?.generic_name?.[0] || "")
-    .toLowerCase()
-    .split(" ")[0];
-  return {
-    brandName,
-    manufacturer,
-    form,
-    ingredients,
-    servingSizeAlert,
-    isBTC,
-    genericKey,
-  };
+// Keywords that suggest supplement vs drug
+const SUPPLEMENT_KEYWORDS = [
+  "vitamin",
+  "calcium",
+  "magnesium",
+  "zinc",
+  "iron",
+  "omega",
+  "fish oil",
+  "probiotic",
+  "melatonin",
+  "biotin",
+  "collagen",
+  "turmeric",
+  "elderberry",
+  "echinacea",
+  "glucosamine",
+  "coq10",
+  "b12",
+  "folate",
+  "folic",
+  "selenium",
+  "potassium",
+  "multivitamin",
+  "supplement",
+  "herbal",
+];
+
+function looksLikeSupplement(query: string): boolean {
+  const q = query.toLowerCase();
+  return SUPPLEMENT_KEYWORDS.some((k) => q.includes(k));
 }
 
 export default function LookupScreen() {
@@ -146,18 +251,19 @@ export default function LookupScreen() {
   const [loading, setLoading] = useState(false);
   const [product, setProduct] = useState<MedProduct | null>(null);
   const [scannerOpen, setScannerOpen] = useState(false);
+  const [source, setSource] = useState<"drug" | "supplement" | null>(null);
 
-  const finishLookup = (r: any | null, fallback: string) => {
-    if (!r) {
+  const finishLookup = (p: MedProduct | null, src: "drug" | "supplement") => {
+    if (!p) {
       Alert.alert(
         "Not found",
-        "Try the generic name.\n\nExamples:\n• Tylenol → acetaminophen\n• Advil → ibuprofen\n• Claritin → loratadine\n• Zyrtec → cetirizine\n• Nexium → omeprazole",
+        "Try the generic name.\n\nDrug examples:\n• Tylenol → acetaminophen\n• Advil → ibuprofen\n• Claritin → loratadine\n\nSupplement examples:\n• vitamin c\n• calcium\n• fish oil\n• melatonin",
       );
       setLoading(false);
       return;
     }
-    const p = buildProduct(r, fallback);
     setProduct(p);
+    setSource(src);
     setCurrentProduct(p);
     setLoading(false);
   };
@@ -166,8 +272,31 @@ export default function LookupScreen() {
     if (!query.trim()) return;
     setLoading(true);
     setProduct(null);
-    const r = await lookupByQuery(query.trim());
-    finishLookup(r, query.trim());
+    setSource(null);
+
+    const q = query.trim();
+
+    if (looksLikeSupplement(q)) {
+      // Try supplement database first
+      const supp = await lookupDSLD(q);
+      if (supp) {
+        finishLookup(supp, "supplement");
+        return;
+      }
+      // Fall back to FDA
+      const drug = await lookupFDA(q);
+      finishLookup(drug, "drug");
+    } else {
+      // Try FDA first
+      const drug = await lookupFDA(q);
+      if (drug) {
+        finishLookup(drug, "drug");
+        return;
+      }
+      // Fall back to supplement database
+      const supp = await lookupDSLD(q);
+      finishLookup(supp, "supplement");
+    }
   };
 
   const handleScanned = async (upc: string) => {
@@ -175,8 +304,8 @@ export default function LookupScreen() {
     setLoading(true);
     setProduct(null);
     setQuery(upc);
-    const r = await lookupByUPC(upc);
-    finishLookup(r, upc);
+    const result = await lookupByUPC(upc);
+    finishLookup(result, "drug");
   };
 
   const handleSeePrices = () => {
@@ -190,30 +319,26 @@ export default function LookupScreen() {
     if (!compareA) {
       setCompareA(product);
       Alert.alert(
-        "Added to Compare",
-        `${product.brandName} added as Product A.\n\nSearch another product and tap "Add to compare" to add Product B.`,
+        "Added",
+        `${product.brandName} added as Product A.\n\nSearch another product and tap Add to compare for Product B.`,
       );
     } else if (!compareB) {
       setCompareB(product);
       Alert.alert(
-        "Added to Compare",
-        `${product.brandName} added as Product B. Go to the Compare tab to see the comparison.`,
+        "Added",
+        `${product.brandName} added as Product B. Go to the Compare tab.`,
       );
     } else {
-      Alert.alert(
-        "Compare slots full",
-        "Both slots are filled. Would you like to replace Product A?",
-        [
-          { text: "Cancel", style: "cancel" },
-          {
-            text: "Replace A",
-            onPress: () => {
-              setCompareA(product);
-              Alert.alert("Done", "Product A replaced.");
-            },
+      Alert.alert("Compare slots full", "Replace Product A?", [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Replace A",
+          onPress: () => {
+            setCompareA(product);
+            Alert.alert("Done", "Product A replaced.");
           },
-        ],
-      );
+        },
+      ]);
     }
   };
 
@@ -233,7 +358,7 @@ export default function LookupScreen() {
         <View style={styles.searchRow}>
           <TextInput
             style={styles.input}
-            placeholder="Search drug or supplement..."
+            placeholder="Drug or supplement name..."
             placeholderTextColor="#888"
             value={query}
             onChangeText={setQuery}
@@ -248,25 +373,53 @@ export default function LookupScreen() {
         </View>
 
         <Text style={styles.hint}>
-          Try: acetaminophen, ibuprofen, loratadine, cetirizine, omeprazole
+          Drugs: acetaminophen, ibuprofen, loratadine{"\n"}
+          Supplements: vitamin c, calcium, fish oil, melatonin
         </Text>
 
         {loading && (
           <View style={styles.loadingWrap}>
             <ActivityIndicator size="large" color="#185FA5" />
-            <Text style={styles.loadingText}>Looking up product...</Text>
+            <Text style={styles.loadingText}>Searching databases...</Text>
           </View>
         )}
 
         {product && (
           <View>
-            <Text style={styles.productName}>{product.brandName}</Text>
-            {product.form ? (
-              <Text style={styles.productForm}>{product.form}</Text>
-            ) : null}
-            {product.manufacturer ? (
-              <Text style={styles.manufacturer}>{product.manufacturer}</Text>
-            ) : null}
+            <View style={styles.productHeader}>
+              <View style={styles.productHeaderLeft}>
+                <Text style={styles.productName}>{product.brandName}</Text>
+                {product.form ? (
+                  <Text style={styles.productForm}>{product.form}</Text>
+                ) : null}
+                {product.manufacturer ? (
+                  <Text style={styles.manufacturer}>
+                    {product.manufacturer}
+                  </Text>
+                ) : null}
+              </View>
+              {source && (
+                <View
+                  style={[
+                    styles.sourceBadge,
+                    source === "supplement"
+                      ? styles.sourceBadgeSupp
+                      : styles.sourceBadgeDrug,
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.sourceBadgeText,
+                      source === "supplement"
+                        ? styles.sourceBadgeSuppText
+                        : styles.sourceBadgeDrugText,
+                    ]}
+                  >
+                    {source === "supplement" ? "Supplement" : "OTC Drug"}
+                  </Text>
+                </View>
+              )}
+            </View>
 
             {product.isBTC && (
               <View style={styles.alertBTC}>
@@ -290,7 +443,11 @@ export default function LookupScreen() {
             {product.ingredients.length > 0 ? (
               <View style={styles.card}>
                 <View style={styles.cardHeader}>
-                  <Text style={styles.cardHeaderLeft}>Active ingredients</Text>
+                  <Text style={styles.cardHeaderLeft}>
+                    {source === "supplement"
+                      ? "Supplement facts"
+                      : "Active ingredients"}
+                  </Text>
                   <Text style={styles.cardHeaderRight}>Purpose</Text>
                 </View>
                 {product.ingredients.map((ing, i) => (
@@ -407,6 +564,13 @@ const styles = StyleSheet.create({
   hint: { fontSize: 12, color: "#999", marginBottom: 16, lineHeight: 18 },
   loadingWrap: { alignItems: "center", marginTop: 40, gap: 12 },
   loadingText: { fontSize: 15, color: "#666" },
+  productHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    marginBottom: 4,
+  },
+  productHeaderLeft: { flex: 1, marginRight: 8 },
   productName: {
     fontSize: 22,
     fontWeight: "600",
@@ -421,6 +585,18 @@ const styles = StyleSheet.create({
     textTransform: "capitalize",
   },
   manufacturer: { fontSize: 14, color: "#888", marginTop: 2, marginBottom: 14 },
+  sourceBadge: {
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    alignSelf: "flex-start",
+    marginTop: 4,
+  },
+  sourceBadgeDrug: { backgroundColor: "#E6F1FB" },
+  sourceBadgeSupp: { backgroundColor: "#EAF3DE" },
+  sourceBadgeText: { fontSize: 12, fontWeight: "600" },
+  sourceBadgeDrugText: { color: "#0C447C" },
+  sourceBadgeSuppText: { color: "#27500A" },
   alertBTC: {
     backgroundColor: "#FCEBEB",
     borderLeftWidth: 3,
