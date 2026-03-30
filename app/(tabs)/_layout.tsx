@@ -13,7 +13,7 @@ export default function TabLayout() {
           paddingBottom: 8,
         },
         tabBarLabelStyle: {
-          fontSize: 14,
+          fontSize: 13,
           fontWeight: "500",
         },
         headerStyle: {
@@ -28,24 +28,19 @@ export default function TabLayout() {
     >
       <Tabs.Screen
         name="index"
-        options={{
-          title: "Lookup",
-          headerTitle: "MedCheck",
-        }}
+        options={{ title: "Lookup", headerTitle: "MedCheck" }}
       />
       <Tabs.Screen
         name="prices"
-        options={{
-          title: "Prices",
-          headerTitle: "MedCheck",
-        }}
+        options={{ title: "Prices", headerTitle: "MedCheck" }}
       />
       <Tabs.Screen
         name="compare"
-        options={{
-          title: "Compare",
-          headerTitle: "MedCheck",
-        }}
+        options={{ title: "Compare", headerTitle: "MedCheck" }}
+      />
+      <Tabs.Screen
+        name="settings"
+        options={{ title: "Settings", headerTitle: "MedCheck" }}
       />
     </Tabs>
   );

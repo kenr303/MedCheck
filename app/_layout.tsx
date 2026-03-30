@@ -12,6 +12,10 @@ export default function RootLayout() {
         name="product-detail"
         options={{ headerShown: false, presentation: "card" }}
       />
+      <Stack.Screen
+        name="privacy"
+        options={{ headerShown: false, presentation: "card" }}
+      />
     </Stack>
   );
 }

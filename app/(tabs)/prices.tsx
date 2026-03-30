@@ -28,6 +28,25 @@ type SearchedProduct = {
   items: PriceItem[];
 };
 
+type LocalPharmacy = {
+  name: string;
+  address: string;
+  phone: string;
+  note: string;
+  url: string;
+  sponsored: boolean;
+};
+
+// Demo local pharmacy — replace with real partner data later
+const LOCAL_PHARMACY: LocalPharmacy = {
+  name: "Your Local Pharmacy",
+  address: "Call for current pricing",
+  phone: "",
+  note: "Support your local independent pharmacy. Same ingredients, personal service.",
+  url: "",
+  sponsored: false,
+};
+
 const PRICE_DB: Record<string, SearchedProduct> = {
   acetaminophen: {
     genericName: "Acetaminophen",
@@ -419,7 +438,6 @@ export default function PricesScreen() {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<SearchedProduct | null>(null);
 
-  // Auto-load if navigated from Lookup tab
   useEffect(() => {
     if (currentProduct?.genericKey) {
       const key = currentProduct.genericKey;
@@ -459,6 +477,13 @@ export default function PricesScreen() {
   };
 
   const openLink = (url: string) => {
+    if (!url) {
+      Alert.alert(
+        "Contact your local pharmacy",
+        "Call your local pharmacy to ask about current pricing for this medication.",
+      );
+      return;
+    }
     Linking.openURL(url).catch(() =>
       Alert.alert("Error", "Could not open link."),
     );
@@ -505,7 +530,28 @@ export default function PricesScreen() {
             <Text style={styles.productStrength}>
               {result.strength} · sorted by lowest price
             </Text>
-            <Text style={styles.bestLabel}>Best deal</Text>
+
+            {/* Local pharmacy slot */}
+            <TouchableOpacity
+              style={styles.localCard}
+              onPress={() => openLink(LOCAL_PHARMACY.url)}
+              activeOpacity={0.8}
+            >
+              <View style={styles.localLeft}>
+                <View style={styles.localBadgeRow}>
+                  <View style={styles.localBadge}>
+                    <Text style={styles.localBadgeText}>Local pharmacy</Text>
+                  </View>
+                </View>
+                <Text style={styles.localName}>{LOCAL_PHARMACY.name}</Text>
+                <Text style={styles.localNote}>{LOCAL_PHARMACY.note}</Text>
+              </View>
+              <View style={styles.localRight}>
+                <Text style={styles.localCTA}>Call for{"\n"}price</Text>
+              </View>
+            </TouchableOpacity>
+
+            <Text style={styles.bestLabel}>Best deal online</Text>
 
             {result.items.map((item, i) => (
               <TouchableOpacity
@@ -558,6 +604,21 @@ export default function PricesScreen() {
               </View>
               <Text style={styles.savingsAmt}>${savings.toFixed(2)}</Text>
             </View>
+
+            {/* Partner pharmacy CTA */}
+            <TouchableOpacity
+              style={styles.partnerCTA}
+              onPress={() =>
+                Alert.alert(
+                  "List your pharmacy",
+                  "Are you an independent pharmacy? Get listed in MedCheck and reach seniors in your area.\n\nContact us at: partners@medcheckapp.com",
+                )
+              }
+            >
+              <Text style={styles.partnerCTAText}>
+                Are you a local pharmacy? Get listed here →
+              </Text>
+            </TouchableOpacity>
           </View>
         )}
       </View>
@@ -595,8 +656,44 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: "#888",
     marginTop: 3,
-    marginBottom: 12,
+    marginBottom: 14,
   },
+
+  localCard: {
+    flexDirection: "row",
+    backgroundColor: "#FFF8E7",
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: "#F59E0B",
+    padding: 14,
+    marginBottom: 16,
+    gap: 12,
+  },
+  localLeft: { flex: 1 },
+  localBadgeRow: { flexDirection: "row", marginBottom: 6 },
+  localBadge: {
+    backgroundColor: "#F59E0B",
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+  },
+  localBadgeText: { fontSize: 11, fontWeight: "700", color: "#78350F" },
+  localName: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: "#111",
+    marginBottom: 3,
+  },
+  localNote: { fontSize: 13, color: "#666", lineHeight: 18 },
+  localRight: { justifyContent: "center", alignItems: "center" },
+  localCTA: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#B45309",
+    textAlign: "center",
+    lineHeight: 18,
+  },
+
   bestLabel: {
     fontSize: 13,
     fontWeight: "600",
@@ -650,4 +747,7 @@ const styles = StyleSheet.create({
   savingsLabel: { fontSize: 14, fontWeight: "600", color: "#111" },
   savingsSub: { fontSize: 12, color: "#888", marginTop: 2 },
   savingsAmt: { fontSize: 26, fontWeight: "600", color: "#0C447C" },
+
+  partnerCTA: { marginTop: 14, padding: 14, alignItems: "center" },
+  partnerCTAText: { fontSize: 13, color: "#185FA5", fontWeight: "500" },
 });
