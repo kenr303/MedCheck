@@ -17,11 +17,10 @@ export type MedProduct = {
 };
 
 type MedStore = {
-  // Current looked-up product (from Lookup tab)
   currentProduct: MedProduct | null;
   setCurrentProduct: (p: MedProduct | null) => void;
-
-  // Compare slots
+  rawFDAResult: any | null;
+  setRawFDAResult: (r: any | null) => void;
   compareA: MedProduct | null;
   compareB: MedProduct | null;
   setCompareA: (p: MedProduct | null) => void;
@@ -32,6 +31,8 @@ type MedStore = {
 export const useMedStore = create<MedStore>((set) => ({
   currentProduct: null,
   setCurrentProduct: (p) => set({ currentProduct: p }),
+  rawFDAResult: null,
+  setRawFDAResult: (r) => set({ rawFDAResult: r }),
   compareA: null,
   compareB: null,
   setCompareA: (p) => set({ compareA: p }),

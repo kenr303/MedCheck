@@ -47,8 +47,10 @@ function parseIngredients(r: any): Ingredient[] {
   });
 }
 
-// Search OpenFDA drug database
-async function lookupFDA(query: string): Promise<MedProduct | null> {
+// Search OpenFDA drug database — returns both product and raw FDA result
+async function lookupFDA(
+  query: string,
+): Promise<{ product: MedProduct; raw: any } | null> {
   const q = encodeURIComponent(query.trim());
   const urls = [
     `https://api.fda.gov/drug/label.json?search=openfda.brand_name:${q}&limit=1`,
@@ -89,13 +91,16 @@ async function lookupFDA(query: string): Promise<MedProduct | null> {
           .toLowerCase()
           .split(" ")[0];
         return {
-          brandName,
-          manufacturer,
-          form,
-          ingredients,
-          servingSizeAlert,
-          isBTC,
-          genericKey,
+          product: {
+            brandName,
+            manufacturer,
+            form,
+            ingredients,
+            servingSizeAlert,
+            isBTC,
+            genericKey,
+          },
+          raw: r,
         };
       }
     } catch {
@@ -246,15 +251,25 @@ function looksLikeSupplement(query: string): boolean {
 
 export default function LookupScreen() {
   const router = useRouter();
-  const { setCurrentProduct, setCompareA, compareA, compareB, setCompareB } =
-    useMedStore();
+  const {
+    setCurrentProduct,
+    setRawFDAResult,
+    setCompareA,
+    compareA,
+    compareB,
+    setCompareB,
+  } = useMedStore();
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(false);
   const [product, setProduct] = useState<MedProduct | null>(null);
   const [scannerOpen, setScannerOpen] = useState(false);
   const [source, setSource] = useState<"drug" | "supplement" | null>(null);
 
-  const finishLookup = (p: MedProduct | null, src: "drug" | "supplement") => {
+  const finishLookup = (
+    p: MedProduct | null,
+    src: "drug" | "supplement",
+    raw: any = null,
+  ) => {
     if (!p) {
       Alert.alert(
         "Not found",
@@ -266,6 +281,7 @@ export default function LookupScreen() {
     setProduct(p);
     setSource(src);
     setCurrentProduct(p);
+    setRawFDAResult(raw);
     setLoading(false);
   };
 
@@ -278,37 +294,31 @@ export default function LookupScreen() {
     const q = query.trim();
 
     if (looksLikeSupplement(q)) {
-      // Try local supplement DB first (always works)
       const local = lookupSupplement(q);
       if (local) {
-        finishLookup(local, "supplement");
+        finishLookup(local, "supplement", null);
         return;
       }
-      // Try NIH DSLD API
-      const supp = await lookupDSLD(q);
-      if (supp) {
-        finishLookup(supp, "supplement");
+      const dsld = await lookupDSLD(q);
+      if (dsld) {
+        finishLookup(dsld, "supplement", null);
         return;
       }
-      // Fall back to FDA
-      const drug = await lookupFDA(q);
-      finishLookup(drug, "drug");
+      const fdaResult = await lookupFDA(q);
+      finishLookup(fdaResult?.product || null, "drug", fdaResult?.raw || null);
     } else {
-      // Try FDA first
-      const drug = await lookupFDA(q);
-      if (drug) {
-        finishLookup(drug, "drug");
+      const fdaResult = await lookupFDA(q);
+      if (fdaResult) {
+        finishLookup(fdaResult.product, "drug", fdaResult.raw);
         return;
       }
-      // Try local supplement DB
       const local = lookupSupplement(q);
       if (local) {
-        finishLookup(local, "supplement");
+        finishLookup(local, "supplement", null);
         return;
       }
-      // Try NIH DSLD API
-      const supp = await lookupDSLD(q);
-      finishLookup(supp, "supplement");
+      const dsld = await lookupDSLD(q);
+      finishLookup(dsld, "supplement", null);
     }
   };
 
@@ -318,7 +328,7 @@ export default function LookupScreen() {
     setProduct(null);
     setQuery(upc);
     const result = await lookupByUPC(upc);
-    finishLookup(result, "drug");
+    finishLookup(result, "drug", null);
   };
 
   const handleSeePrices = () => {

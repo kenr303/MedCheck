@@ -27,7 +27,7 @@ type FullDetail = {
 
 function clean(text: string | undefined): string {
   if (!text) return "";
-  return text.replace(/\s+/g, " ").replace(/•/g, "\n• ").trim();
+  return text.replace(/\s+/g, " ").trim();
 }
 
 function truncate(text: string, max = 600): string {
@@ -37,7 +37,7 @@ function truncate(text: string, max = 600): string {
 
 export default function ProductDetailScreen() {
   const router = useRouter();
-  const { currentProduct } = useMedStore();
+  const { currentProduct, rawFDAResult } = useMedStore();
   const [detail, setDetail] = useState<FullDetail | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -46,67 +46,58 @@ export default function ProductDetailScreen() {
       setLoading(false);
       return;
     }
-    fetchFull(currentProduct.brandName);
-  }, []);
 
-  const fetchFull = async (name: string) => {
-    setLoading(true);
-    const q = encodeURIComponent(name.trim());
-    const urls = [
-      `https://api.fda.gov/drug/label.json?search=openfda.brand_name:${q}&limit=1`,
-      `https://api.fda.gov/drug/label.json?search=openfda.generic_name:${q}&limit=1`,
-      `https://api.fda.gov/drug/label.json?search=${q}&limit=1`,
-    ];
-    let r: any = null;
-    for (const url of urls) {
-      try {
-        const res = await fetch(url);
-        const data = await res.json();
-        if (data.results?.length > 0) {
-          r = data.results[0];
-          break;
-        }
-      } catch {
-        continue;
-      }
-    }
-
-    if (!r) {
-      setLoading(false);
+    // Use the raw FDA result we already have — no second fetch needed
+    if (rawFDAResult) {
+      buildDetail(rawFDAResult, currentProduct.brandName);
       return;
     }
 
+    // Supplement — no FDA data, show what we have from the store
+    setDetail({
+      brandName: currentProduct.brandName,
+      genericName: "",
+      manufacturer: currentProduct.manufacturer,
+      form: currentProduct.form,
+      ingredients: currentProduct.ingredients,
+      dosage: "",
+      warnings: "",
+      sideEffects: "",
+      storage: "",
+      pregnancy: "",
+      interactions: "",
+      isBTC: currentProduct.isBTC,
+    });
+    setLoading(false);
+  }, []);
+
+  const buildDetail = (r: any, fallbackName: string) => {
     const rawIngredients: string[] =
       r.active_ingredient || r.active_ingredients || [];
     const purposeList: string[] = (r.purpose || []).map((p: string) =>
       p.replace(/^purpose\s*/i, "").trim(),
     );
     const ingredients = rawIngredients.map((ing: string, i: number) => {
-      const match = ing
+      const s = ing
         .replace(
           /active\s+ingredient[s]?\s*(\(in\s+each\s+[\w\s]+\))?\s*/gi,
           "",
         )
         .replace(/each\s+[\w\s]+\s+contains\s*/gi, "")
-        .trim()
-        .match(
-          /([\d.]+\s*(?:mg|mcg|mL|g|%|IU|units?)(?:\s*\/\s*[\w.]+)?)\s*$/i,
-        );
-      const raw = ing
-        .replace(
-          /active\s+ingredient[s]?\s*(\(in\s+each\s+[\w\s]+\))?\s*/gi,
-          "",
-        )
         .trim();
+      const match = s.match(
+        /([\d.]+\s*(?:mg|mcg|mL|g|%|IU|units?)(?:\s*\/\s*[\w.]+)?)\s*$/i,
+      );
       return {
-        name: match ? raw.slice(0, raw.lastIndexOf(match[0])).trim() : raw,
+        name: match ? s.slice(0, s.lastIndexOf(match[0])).trim() : s,
         concentration: match ? match[0].trim() : "",
         purpose: purposeList[i] || purposeList[0] || "",
       };
     });
 
     setDetail({
-      brandName: r.openfda?.brand_name?.[0] || r.brand_name?.[0] || name,
+      brandName:
+        r.openfda?.brand_name?.[0] || r.brand_name?.[0] || fallbackName,
       genericName: r.openfda?.generic_name?.[0] || "",
       manufacturer:
         r.openfda?.manufacturer_name?.[0] || r.manufacturer_name?.[0] || "",
@@ -140,14 +131,14 @@ export default function ProductDetailScreen() {
       {loading && (
         <View style={styles.loadingWrap}>
           <ActivityIndicator size="large" color="#185FA5" />
-          <Text style={styles.loadingText}>Loading full details...</Text>
+          <Text style={styles.loadingText}>Loading details...</Text>
         </View>
       )}
 
       {!loading && !detail && (
         <View style={styles.loadingWrap}>
           <Text style={styles.noData}>
-            Full details not available for this product.
+            Details not available for this product.
           </Text>
         </View>
       )}
@@ -178,7 +169,6 @@ export default function ProductDetailScreen() {
             </View>
           )}
 
-          {/* Ingredients */}
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Active ingredients</Text>
             <View style={styles.card}>
@@ -211,7 +201,6 @@ export default function ProductDetailScreen() {
             </View>
           </View>
 
-          {/* Dosage */}
           {detail.dosage ? (
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>Dosage & directions</Text>
@@ -221,7 +210,6 @@ export default function ProductDetailScreen() {
             </View>
           ) : null}
 
-          {/* Warnings */}
           {detail.warnings ? (
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>Warnings</Text>
@@ -231,7 +219,6 @@ export default function ProductDetailScreen() {
             </View>
           ) : null}
 
-          {/* Side effects */}
           {detail.sideEffects ? (
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>Possible side effects</Text>
@@ -241,7 +228,6 @@ export default function ProductDetailScreen() {
             </View>
           ) : null}
 
-          {/* Drug interactions */}
           {detail.interactions ? (
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>Drug interactions</Text>
@@ -251,7 +237,6 @@ export default function ProductDetailScreen() {
             </View>
           ) : null}
 
-          {/* Pregnancy */}
           {detail.pregnancy ? (
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>Pregnancy & breastfeeding</Text>
@@ -261,7 +246,6 @@ export default function ProductDetailScreen() {
             </View>
           ) : null}
 
-          {/* Storage */}
           {detail.storage ? (
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>Storage</Text>
