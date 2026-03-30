@@ -1,5 +1,5 @@
 import { useRouter } from "expo-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -11,6 +11,12 @@ import {
   View,
 } from "react-native";
 import BarcodeScanner from "../../components/BarcodeScanner";
+import {
+  loadLastProduct,
+  loadRecentSearches,
+  saveLastProduct,
+  saveRecentSearches,
+} from "../../store/cache";
 import { lookupSupplement } from "../../store/supplementData";
 import { COLOR, FONT, RADIUS, SPACE } from "../../store/theme";
 import { Ingredient, MedProduct, useMedStore } from "../../store/useMedStore";
@@ -252,13 +258,32 @@ export default function LookupScreen() {
   const [product, setProduct] = useState<MedProduct | null>(null);
   const [scannerOpen, setScannerOpen] = useState(false);
   const [source, setSource] = useState<"drug" | "supplement" | null>(null);
+  const [offlineBanner, setOfflineBanner] = useState(false);
 
-  const finishLookup = (
+  useEffect(() => {
+    // Load cached recent searches and last product on first open
+    loadRecentSearches().then((searches) => {
+      searches.forEach((s) => addRecentSearch(s));
+    });
+  }, []);
+
+  const finishLookup = async (
     p: MedProduct | null,
     src: "drug" | "supplement",
     raw: any = null,
   ) => {
     if (!p) {
+      // Try loading from cache before showing error
+      const cached = await loadLastProduct();
+      if (cached?.product) {
+        setProduct(cached.product);
+        setSource("drug");
+        setCurrentProduct(cached.product);
+        setRawFDAResult(cached.raw);
+        setOfflineBanner(true);
+        setLoading(false);
+        return;
+      }
       Alert.alert(
         "Not found",
         "Try the generic name.\n\nDrug examples:\n• Tylenol → acetaminophen\n• Advil → ibuprofen\n• Claritin → loratadine\n\nSupplement examples:\n• vitamin c\n• calcium\n• fish oil\n• melatonin",
@@ -266,11 +291,14 @@ export default function LookupScreen() {
       setLoading(false);
       return;
     }
+    setOfflineBanner(false);
     setProduct(p);
     setSource(src);
     setCurrentProduct(p);
     setRawFDAResult(raw);
     addRecentSearch(p.brandName);
+    saveLastProduct(p, raw);
+    saveRecentSearches([p.brandName, ...recentSearches].slice(0, 8));
     setLoading(false);
   };
 
@@ -404,6 +432,14 @@ export default function LookupScreen() {
                 </TouchableOpacity>
               ))}
             </View>
+          </View>
+        )}
+
+        {offlineBanner && (
+          <View style={S.offlineBanner}>
+            <Text style={S.offlineBannerText}>
+              ⚠ No internet connection — showing last saved result.
+            </Text>
           </View>
         )}
 
@@ -619,6 +655,15 @@ const S = StyleSheet.create({
     color: COLOR.primaryMid,
     fontWeight: "500",
   },
+  offlineBanner: {
+    backgroundColor: "#FFF3CD",
+    borderRadius: RADIUS.sm,
+    padding: 12,
+    marginBottom: 12,
+    borderLeftWidth: 3,
+    borderLeftColor: "#F59E0B",
+  },
+  offlineBannerText: { fontSize: FONT.sm, color: "#92400E", lineHeight: 20 },
 
   loadingWrap: { alignItems: "center", marginTop: 48, gap: 14 },
   loadingText: { fontSize: FONT.md, color: COLOR.textSub },
