@@ -244,6 +244,8 @@ export default function LookupScreen() {
     compareA,
     compareB,
     setCompareB,
+    recentSearches,
+    addRecentSearch,
   } = useMedStore();
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(false);
@@ -268,6 +270,7 @@ export default function LookupScreen() {
     setSource(src);
     setCurrentProduct(p);
     setRawFDAResult(raw);
+    addRecentSearch(p.brandName);
     setLoading(false);
   };
 
@@ -383,6 +386,26 @@ export default function LookupScreen() {
           Drugs: acetaminophen, ibuprofen, loratadine{"\n"}
           Supplements: vitamin c, calcium, fish oil, melatonin
         </Text>
+
+        {recentSearches.length > 0 && !product && !loading && (
+          <View style={S.recentWrap}>
+            <Text style={S.recentTitle}>Recent searches</Text>
+            <View style={S.recentList}>
+              {recentSearches.map((item, i) => (
+                <TouchableOpacity
+                  key={i}
+                  style={S.recentChip}
+                  onPress={() => {
+                    setQuery(item);
+                  }}
+                  activeOpacity={0.7}
+                >
+                  <Text style={S.recentChipText}>{item}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+        )}
 
         {loading && (
           <View style={S.loadingWrap}>
@@ -572,6 +595,29 @@ const S = StyleSheet.create({
     color: COLOR.textMuted,
     marginBottom: SPACE.md,
     lineHeight: 20,
+  },
+  recentWrap: { marginBottom: SPACE.md },
+  recentTitle: {
+    fontSize: FONT.xs,
+    fontWeight: "600",
+    color: COLOR.textMuted,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+    marginBottom: 10,
+  },
+  recentList: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  recentChip: {
+    backgroundColor: COLOR.white,
+    borderWidth: 1,
+    borderColor: COLOR.border,
+    borderRadius: 20,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+  },
+  recentChipText: {
+    fontSize: FONT.sm,
+    color: COLOR.primaryMid,
+    fontWeight: "500",
   },
 
   loadingWrap: { alignItems: "center", marginTop: 48, gap: 14 },

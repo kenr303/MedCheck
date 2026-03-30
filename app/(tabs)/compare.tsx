@@ -12,6 +12,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import { COLOR, FONT, RADIUS, SPACE } from "../../store/theme";
 import { Ingredient, MedProduct, useMedStore } from "../../store/useMedStore";
 
 function cleanIngredientName(raw: string): {
@@ -50,9 +51,21 @@ function parseIngredients(r: any): Ingredient[] {
 const BEST_PRICES: Record<string, string> = {
   acetaminophen: "$4.88 (Walmart)",
   ibuprofen: "$4.48 (Walmart)",
+  naproxen: "$6.48 (Walmart)",
+  aspirin: "$3.88 (Walmart)",
   loratadine: "$6.88 (Walmart)",
   cetirizine: "$7.88 (Walmart)",
+  diphenhydramine: "$3.98 (Walmart)",
   omeprazole: "$9.88 (Walmart)",
+  famotidine: "$7.48 (Walmart)",
+  loperamide: "$5.48 (Walmart)",
+  simethicone: "$5.48 (Walmart)",
+  guaifenesin: "$7.48 (Walmart)",
+  dextromethorphan: "$4.98 (Walmart)",
+  melatonin: "$8.88 (Walmart)",
+  calcium: "$5.88 (Walmart)",
+  "vitamin d": "$4.88 (Walmart)",
+  "fish oil": "$7.88 (Walmart)",
 };
 
 async function fetchProduct(query: string): Promise<MedProduct | null> {
@@ -92,17 +105,15 @@ async function fetchProduct(query: string): Promise<MedProduct | null> {
     .toLowerCase()
     .split(" ")[0];
   const bestPrice = BEST_PRICES[genericKey] || "See prices tab";
-  const manufacturer = r.openfda?.manufacturer_name?.[0] || "";
-  const servingSizeAlert = null;
   return {
     brandName,
-    manufacturer,
+    manufacturer: r.openfda?.manufacturer_name?.[0] || "",
     form,
     ingredients,
     isBTC,
     genericKey,
+    servingSizeAlert: null,
     bestPrice,
-    servingSizeAlert,
   } as any;
 }
 
@@ -116,36 +127,30 @@ type SlotProps = {
 function Slot({ label, product, loading, onSearch }: SlotProps) {
   if (loading)
     return (
-      <View style={[styles.slot, styles.slotFilled]}>
-        <ActivityIndicator size="small" color="#185FA5" />
-      </View>
+      <TouchableOpacity style={[S.slot, S.slotFilled]} activeOpacity={1}>
+        <ActivityIndicator size="small" color={COLOR.primaryMid} />
+      </TouchableOpacity>
     );
   if (!product)
     return (
-      <TouchableOpacity
-        style={styles.slot}
-        onPress={onSearch}
-        activeOpacity={0.7}
-      >
-        <Text style={styles.slotLabel}>{label}</Text>
-        <Text style={styles.slotIcon}>⊕</Text>
-        <Text style={styles.slotHint}>Scan or search</Text>
+      <TouchableOpacity style={S.slot} onPress={onSearch} activeOpacity={0.7}>
+        <Text style={S.slotLabel}>{label}</Text>
+        <Text style={S.slotIcon}>＋</Text>
+        <Text style={S.slotHint}>Scan or search</Text>
       </TouchableOpacity>
     );
   return (
     <TouchableOpacity
-      style={[styles.slot, styles.slotFilled]}
+      style={[S.slot, S.slotFilled]}
       onPress={onSearch}
       activeOpacity={0.8}
     >
-      <Text style={styles.slotTag}>{label}</Text>
-      <Text style={styles.slotName} numberOfLines={2}>
+      <Text style={S.slotTag}>{label}</Text>
+      <Text style={S.slotName} numberOfLines={2}>
         {product.brandName}
       </Text>
-      {product.form ? (
-        <Text style={styles.slotForm}>{product.form}</Text>
-      ) : null}
-      <Text style={styles.slotChange}>Tap to change</Text>
+      {product.form ? <Text style={S.slotForm}>{product.form}</Text> : null}
+      <Text style={S.slotChange}>Tap to change</Text>
     </TouchableOpacity>
   );
 }
@@ -198,9 +203,9 @@ export default function CompareScreen() {
   const concDiffers = bothLoaded && concA !== concB;
 
   return (
-    <ScrollView style={styles.container} keyboardShouldPersistTaps="handled">
-      <View style={styles.inner}>
-        <View style={styles.slotRow}>
+    <ScrollView style={S.container} keyboardShouldPersistTaps="handled">
+      <View style={S.inner}>
+        <View style={S.slotRow}>
           <Slot
             label="Product A"
             product={compareA}
@@ -216,10 +221,10 @@ export default function CompareScreen() {
         </View>
 
         {!bothLoaded && (
-          <View style={styles.emptyHint}>
-            <Text style={styles.emptyHintText}>
+          <View style={S.emptyHint}>
+            <Text style={S.emptyHintText}>
               Tap a slot to search, or find a product in the Lookup tab and tap
-              Add to compare.
+              &quot;Add to compare&quot;.
             </Text>
           </View>
         )}
@@ -227,11 +232,9 @@ export default function CompareScreen() {
         {bothLoaded && (
           <View>
             {(compareA.isBTC || compareB.isBTC) && (
-              <View style={styles.alertBTC}>
-                <Text style={styles.alertBTCTitle}>
-                  Behind-the-counter product
-                </Text>
-                <Text style={styles.alertBTCText}>
+              <View style={S.alertBTC}>
+                <Text style={S.alertBTCTitle}>Behind-the-counter product</Text>
+                <Text style={S.alertBTCText}>
                   {compareA.isBTC ? compareA.brandName : compareB.brandName}{" "}
                   contains pseudoephedrine. Valid ID required. Purchase limits
                   apply.
@@ -240,8 +243,8 @@ export default function CompareScreen() {
             )}
 
             {concDiffers && (
-              <View style={styles.alertWarn}>
-                <Text style={styles.alertWarnText}>
+              <View style={S.alertWarn}>
+                <Text style={S.alertWarnText}>
                   ⚠ Different concentrations — do not swap volumes between these
                   products.
                 </Text>
@@ -249,31 +252,27 @@ export default function CompareScreen() {
             )}
 
             {hasDiff && (
-              <View style={styles.diffBox}>
-                <Text style={styles.diffTitle}>Key differences</Text>
+              <View style={S.diffBox}>
+                <Text style={S.diffTitle}>Key differences</Text>
                 {uniqueToA.length > 0 && (
-                  <Text style={styles.diffLine}>
-                    <Text style={styles.diffProd}>
-                      {compareA.brandName} only:{" "}
-                    </Text>
+                  <Text style={S.diffLine}>
+                    <Text style={S.diffProd}>{compareA.brandName} only: </Text>
                     {uniqueToA
                       .map((n) => n.charAt(0).toUpperCase() + n.slice(1))
                       .join(", ")}
                   </Text>
                 )}
                 {uniqueToB.length > 0 && (
-                  <Text style={styles.diffLine}>
-                    <Text style={styles.diffProd}>
-                      {compareB.brandName} only:{" "}
-                    </Text>
+                  <Text style={S.diffLine}>
+                    <Text style={S.diffProd}>{compareB.brandName} only: </Text>
                     {uniqueToB
                       .map((n) => n.charAt(0).toUpperCase() + n.slice(1))
                       .join(", ")}
                   </Text>
                 )}
                 {shared.length > 0 && (
-                  <Text style={styles.diffLine}>
-                    <Text style={styles.diffShared}>Both contain: </Text>
+                  <Text style={S.diffLine}>
+                    <Text style={S.diffShared}>Both contain: </Text>
                     {shared
                       .map((n) => n.charAt(0).toUpperCase() + n.slice(1))
                       .join(", ")}
@@ -282,13 +281,13 @@ export default function CompareScreen() {
               </View>
             )}
 
-            <View style={styles.table}>
-              <View style={styles.tableHead}>
-                <Text style={styles.thCell}></Text>
-                <Text style={styles.thCell} numberOfLines={1}>
+            <View style={S.table}>
+              <View style={S.tableHead}>
+                <Text style={S.thCell}></Text>
+                <Text style={S.thCell} numberOfLines={1}>
                   {compareA.brandName}
                 </Text>
-                <Text style={styles.thCell} numberOfLines={1}>
+                <Text style={S.thCell} numberOfLines={1}>
                   {compareB.brandName}
                 </Text>
               </View>
@@ -301,21 +300,21 @@ export default function CompareScreen() {
               }).map((_, i) => {
                 const ingA = compareA.ingredients[i];
                 const ingB = compareB.ingredients[i];
-                const nameA = ingA?.name.toLowerCase() || "";
-                const nameB = ingB?.name.toLowerCase() || "";
-                const isUniqueA = ingA && !namesB.includes(nameA);
-                const isUniqueB = ingB && !namesA.includes(nameB);
+                const isUniqueA =
+                  ingA && !namesB.includes(ingA.name.toLowerCase());
+                const isUniqueB =
+                  ingB && !namesA.includes(ingB.name.toLowerCase());
                 return (
-                  <View key={i} style={styles.tableRow}>
-                    <Text style={styles.tdLabel}>Ingredient {i + 1}</Text>
+                  <View key={i} style={S.tableRow}>
+                    <Text style={S.tdLabel}>Ingredient {i + 1}</Text>
                     <Text
-                      style={[styles.tdCell, isUniqueA && styles.tdUnique]}
+                      style={[S.tdCell, isUniqueA && S.tdUnique]}
                       numberOfLines={3}
                     >
                       {ingA ? `${ingA.name}\n${ingA.concentration}` : "—"}
                     </Text>
                     <Text
-                      style={[styles.tdCell, isUniqueB && styles.tdUnique]}
+                      style={[S.tdCell, isUniqueB && S.tdUnique]}
                       numberOfLines={3}
                     >
                       {ingB ? `${ingB.name}\n${ingB.concentration}` : "—"}
@@ -324,15 +323,15 @@ export default function CompareScreen() {
                 );
               })}
 
-              <View style={styles.tableRow}>
-                <Text style={styles.tdLabel}>Purpose</Text>
-                <Text style={styles.tdCell} numberOfLines={3}>
+              <View style={S.tableRow}>
+                <Text style={S.tdLabel}>Purpose</Text>
+                <Text style={S.tdCell} numberOfLines={3}>
                   {compareA.ingredients
                     .map((i) => i.purpose)
                     .filter(Boolean)
                     .join("\n") || "—"}
                 </Text>
-                <Text style={styles.tdCell} numberOfLines={3}>
+                <Text style={S.tdCell} numberOfLines={3}>
                   {compareB.ingredients
                     .map((i) => i.purpose)
                     .filter(Boolean)
@@ -340,10 +339,10 @@ export default function CompareScreen() {
                 </Text>
               </View>
 
-              <View style={styles.tableRow}>
-                <Text style={styles.tdLabel}>Concentration</Text>
+              <View style={S.tableRow}>
+                <Text style={S.tdLabel}>Concentration</Text>
                 <Text
-                  style={[styles.tdCell, concDiffers && styles.tdFlag]}
+                  style={[S.tdCell, concDiffers && S.tdFlag]}
                   numberOfLines={2}
                 >
                   {compareA.ingredients
@@ -352,7 +351,7 @@ export default function CompareScreen() {
                     .join("\n") || "—"}
                 </Text>
                 <Text
-                  style={[styles.tdCell, concDiffers && styles.tdFlag]}
+                  style={[S.tdCell, concDiffers && S.tdFlag]}
                   numberOfLines={2}
                 >
                   {compareB.ingredients
@@ -362,29 +361,29 @@ export default function CompareScreen() {
                 </Text>
               </View>
 
-              <View style={styles.tableRow}>
-                <Text style={styles.tdLabel}>ID required</Text>
-                <Text style={[styles.tdCell, compareA.isBTC && styles.tdFlag]}>
+              <View style={S.tableRow}>
+                <Text style={S.tdLabel}>ID required</Text>
+                <Text style={[S.tdCell, compareA.isBTC && S.tdFlag]}>
                   {compareA.isBTC ? "Yes" : "No"}
                 </Text>
-                <Text style={[styles.tdCell, compareB.isBTC && styles.tdFlag]}>
+                <Text style={[S.tdCell, compareB.isBTC && S.tdFlag]}>
                   {compareB.isBTC ? "Yes" : "No"}
                 </Text>
               </View>
 
-              <View style={[styles.tableRow, styles.tableRowLast]}>
-                <Text style={styles.tdLabel}>Best price</Text>
-                <Text style={styles.tdCell}>
+              <View style={[S.tableRow, S.tableRowLast]}>
+                <Text style={S.tdLabel}>Best price</Text>
+                <Text style={S.tdCell}>
                   {(compareA as any).bestPrice || "—"}
                 </Text>
-                <Text style={styles.tdCell}>
+                <Text style={S.tdCell}>
                   {(compareB as any).bestPrice || "—"}
                 </Text>
               </View>
             </View>
 
-            <TouchableOpacity style={styles.clearBtn} onPress={clearCompare}>
-              <Text style={styles.clearBtnText}>Clear comparison</Text>
+            <TouchableOpacity style={S.clearBtn} onPress={clearCompare}>
+              <Text style={S.clearBtnText}>Clear comparison</Text>
             </TouchableOpacity>
           </View>
         )}
@@ -393,20 +392,20 @@ export default function CompareScreen() {
       <Modal visible={modalVisible} transparent animationType="slide">
         <KeyboardAvoidingView
           behavior={Platform.OS === "ios" ? "padding" : "height"}
-          style={styles.modalOverlay}
+          style={S.modalOverlay}
         >
           <TouchableOpacity
-            style={styles.modalDismiss}
+            style={S.modalDismiss}
             onPress={() => setModalVisible(false)}
           />
-          <View style={styles.modalBox}>
-            <Text style={styles.modalTitle}>
+          <View style={S.modalBox}>
+            <Text style={S.modalTitle}>
               Search {activeSlot === "a" ? "Product A" : "Product B"}
             </Text>
             <TextInput
-              style={styles.modalInput}
+              style={S.modalInput}
               placeholder="e.g. acetaminophen, ibuprofen..."
-              placeholderTextColor="#888"
+              placeholderTextColor={COLOR.textMuted}
               value={searchQuery}
               onChangeText={setSearchQuery}
               onSubmitEditing={doSearch}
@@ -415,15 +414,15 @@ export default function CompareScreen() {
               autoCorrect={false}
               autoCapitalize="none"
             />
-            <View style={styles.modalBtns}>
+            <View style={S.modalBtns}>
               <TouchableOpacity
-                style={[styles.modalBtn, styles.modalBtnGray]}
+                style={[S.modalBtn, S.modalBtnGray]}
                 onPress={() => setModalVisible(false)}
               >
-                <Text style={styles.modalBtnGrayText}>Cancel</Text>
+                <Text style={S.modalBtnGrayText}>Cancel</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={styles.modalBtn} onPress={doSearch}>
-                <Text style={styles.modalBtnText}>Search</Text>
+              <TouchableOpacity style={S.modalBtn} onPress={doSearch}>
+                <Text style={S.modalBtnText}>Search</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -433,91 +432,96 @@ export default function CompareScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#f5f5f5" },
-  inner: { padding: 16 },
-  slotRow: { flexDirection: "row", gap: 10, marginBottom: 16 },
+const S = StyleSheet.create({
+  container: { flex: 1, backgroundColor: COLOR.bg },
+  inner: { padding: SPACE.md },
+  slotRow: { flexDirection: "row", gap: SPACE.sm, marginBottom: SPACE.md },
   slot: {
     flex: 1,
     borderWidth: 1.5,
     borderColor: "#ccc",
     borderStyle: "dashed",
-    borderRadius: 12,
-    padding: 14,
+    borderRadius: RADIUS.md,
+    padding: 16,
     alignItems: "center",
-    minHeight: 110,
+    minHeight: 120,
     justifyContent: "center",
-    backgroundColor: "#fff",
+    backgroundColor: COLOR.white,
   },
   slotFilled: {
     borderStyle: "solid",
     borderColor: "#bbb",
     alignItems: "flex-start",
   },
-  slotLabel: { fontSize: 12, color: "#999", marginBottom: 6 },
-  slotIcon: { fontSize: 28, color: "#ccc", marginBottom: 4 },
-  slotHint: { fontSize: 13, color: "#999" },
-  slotTag: { fontSize: 11, color: "#888", marginBottom: 4 },
-  slotName: { fontSize: 14, fontWeight: "600", color: "#111", lineHeight: 20 },
-  slotForm: { fontSize: 12, color: "#666", marginTop: 2 },
-  slotChange: { fontSize: 11, color: "#185FA5", marginTop: 6 },
+  slotLabel: { fontSize: FONT.sm, color: COLOR.textMuted, marginBottom: 8 },
+  slotIcon: { fontSize: 32, color: "#ccc", marginBottom: 6 },
+  slotHint: { fontSize: FONT.sm, color: COLOR.textMuted },
+  slotTag: { fontSize: FONT.xs, color: COLOR.textMuted, marginBottom: 5 },
+  slotName: {
+    fontSize: FONT.md,
+    fontWeight: "600",
+    color: COLOR.text,
+    lineHeight: 22,
+  },
+  slotForm: { fontSize: FONT.xs, color: COLOR.textSub, marginTop: 3 },
+  slotChange: { fontSize: FONT.xs, color: COLOR.primaryMid, marginTop: 8 },
   emptyHint: {
-    backgroundColor: "#fff",
-    borderRadius: 12,
-    padding: 16,
+    backgroundColor: COLOR.white,
+    borderRadius: RADIUS.md,
+    padding: 20,
     borderWidth: 0.5,
-    borderColor: "#ddd",
+    borderColor: COLOR.border,
   },
   emptyHintText: {
-    fontSize: 15,
-    color: "#666",
-    lineHeight: 22,
+    fontSize: FONT.md,
+    color: COLOR.textSub,
+    lineHeight: 24,
     textAlign: "center",
   },
   alertBTC: {
-    backgroundColor: "#FCEBEB",
+    backgroundColor: COLOR.dangerLight,
     borderLeftWidth: 3,
     borderLeftColor: "#E24B4A",
-    borderRadius: 8,
-    padding: 12,
-    marginBottom: 12,
-  },
-  alertBTCTitle: {
-    fontSize: 15,
-    fontWeight: "600",
-    color: "#501313",
-    marginBottom: 4,
-  },
-  alertBTCText: { fontSize: 14, color: "#501313", lineHeight: 20 },
-  alertWarn: {
-    backgroundColor: "#FAEEDA",
-    borderLeftWidth: 3,
-    borderLeftColor: "#EF9F27",
-    borderRadius: 8,
-    padding: 12,
-    marginBottom: 12,
-  },
-  alertWarnText: { fontSize: 14, color: "#633806", lineHeight: 20 },
-  diffBox: {
-    backgroundColor: "#E6F1FB",
-    borderRadius: 10,
+    borderRadius: RADIUS.sm,
     padding: 14,
     marginBottom: 14,
   },
-  diffTitle: {
-    fontSize: 14,
+  alertBTCTitle: {
+    fontSize: FONT.md,
     fontWeight: "600",
-    color: "#0C447C",
-    marginBottom: 8,
+    color: COLOR.danger,
+    marginBottom: 5,
   },
-  diffLine: { fontSize: 14, color: "#111", lineHeight: 22 },
-  diffProd: { fontWeight: "600", color: "#185FA5" },
+  alertBTCText: { fontSize: FONT.sm, color: COLOR.danger, lineHeight: 22 },
+  alertWarn: {
+    backgroundColor: COLOR.warningLight,
+    borderLeftWidth: 3,
+    borderLeftColor: "#EF9F27",
+    borderRadius: RADIUS.sm,
+    padding: 14,
+    marginBottom: 14,
+  },
+  alertWarnText: { fontSize: FONT.md, color: COLOR.warning, lineHeight: 22 },
+  diffBox: {
+    backgroundColor: COLOR.primaryLight,
+    borderRadius: RADIUS.sm,
+    padding: 16,
+    marginBottom: 14,
+  },
+  diffTitle: {
+    fontSize: FONT.md,
+    fontWeight: "600",
+    color: COLOR.primary,
+    marginBottom: 10,
+  },
+  diffLine: { fontSize: FONT.md, color: COLOR.text, lineHeight: 24 },
+  diffProd: { fontWeight: "600", color: COLOR.primaryMid },
   diffShared: { fontWeight: "600", color: "#3B6D11" },
   table: {
-    backgroundColor: "#fff",
-    borderRadius: 12,
+    backgroundColor: COLOR.white,
+    borderRadius: RADIUS.md,
     borderWidth: 0.5,
-    borderColor: "#ddd",
+    borderColor: COLOR.border,
     overflow: "hidden",
     marginBottom: 14,
   },
@@ -525,14 +529,14 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     backgroundColor: "#f0f0f0",
     borderBottomWidth: 0.5,
-    borderBottomColor: "#ddd",
+    borderBottomColor: COLOR.border,
   },
   thCell: {
     flex: 1,
-    padding: 10,
-    fontSize: 12,
+    padding: 12,
+    fontSize: FONT.xs,
     fontWeight: "600",
-    color: "#555",
+    color: COLOR.textSub,
     textTransform: "uppercase",
     letterSpacing: 0.4,
   },
@@ -543,33 +547,33 @@ const styles = StyleSheet.create({
   },
   tableRowLast: { borderBottomWidth: 0 },
   tdLabel: {
-    width: 80,
-    padding: 10,
-    fontSize: 12,
-    color: "#888",
+    width: 88,
+    padding: 12,
+    fontSize: FONT.xs,
+    color: COLOR.textMuted,
     borderRightWidth: 0.5,
     borderRightColor: "#eee",
   },
   tdCell: {
     flex: 1,
-    padding: 10,
-    fontSize: 13,
+    padding: 12,
+    fontSize: FONT.sm,
     fontWeight: "500",
-    color: "#111",
+    color: COLOR.text,
     borderRightWidth: 0.5,
     borderRightColor: "#eee",
   },
-  tdUnique: { backgroundColor: "#E6F1FB", color: "#0C447C" },
-  tdFlag: { backgroundColor: "#FAEEDA", color: "#633806" },
+  tdUnique: { backgroundColor: COLOR.primaryLight, color: COLOR.primary },
+  tdFlag: { backgroundColor: COLOR.warningLight, color: COLOR.warning },
   clearBtn: {
     borderWidth: 0.5,
-    borderColor: "#ccc",
-    borderRadius: 10,
-    padding: 12,
+    borderColor: COLOR.border,
+    borderRadius: RADIUS.sm,
+    padding: 16,
     alignItems: "center",
-    backgroundColor: "#fff",
+    backgroundColor: COLOR.white,
   },
-  clearBtnText: { fontSize: 14, color: "#666" },
+  clearBtnText: { fontSize: FONT.md, color: COLOR.textSub },
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.5)",
@@ -577,38 +581,38 @@ const styles = StyleSheet.create({
   },
   modalDismiss: { flex: 1 },
   modalBox: {
-    backgroundColor: "#fff",
+    backgroundColor: COLOR.white,
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     padding: 24,
     paddingBottom: 36,
   },
   modalTitle: {
-    fontSize: 18,
+    fontSize: FONT.lg,
     fontWeight: "600",
-    color: "#111",
+    color: COLOR.text,
     marginBottom: 16,
   },
   modalInput: {
-    backgroundColor: "#f5f5f5",
-    borderRadius: 10,
+    backgroundColor: COLOR.bg,
+    borderRadius: RADIUS.sm,
     borderWidth: 1.5,
     borderColor: "#ccc",
-    paddingHorizontal: 14,
-    paddingVertical: 13,
-    fontSize: 17,
-    color: "#111",
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    fontSize: FONT.md,
+    color: COLOR.text,
     marginBottom: 16,
   },
   modalBtns: { flexDirection: "row", gap: 10 },
   modalBtn: {
     flex: 1,
-    backgroundColor: "#185FA5",
-    borderRadius: 10,
-    paddingVertical: 14,
+    backgroundColor: COLOR.primaryMid,
+    borderRadius: RADIUS.sm,
+    paddingVertical: 16,
     alignItems: "center",
   },
-  modalBtnText: { color: "#fff", fontSize: 16, fontWeight: "500" },
+  modalBtnText: { color: COLOR.white, fontSize: FONT.md, fontWeight: "500" },
   modalBtnGray: { backgroundColor: "#f0f0f0" },
-  modalBtnGrayText: { color: "#444", fontSize: 16, fontWeight: "500" },
+  modalBtnGrayText: { color: "#444", fontSize: FONT.md, fontWeight: "500" },
 });
