@@ -1232,6 +1232,8 @@ const PRICE_DB: Record<string, SearchedProduct> = {
   },
 };
 
+const PRICE_DATA_UPDATED = "January 2025";
+
 const ALIASES: Record<string, string> = {
   tylenol: "acetaminophen",
   advil: "ibuprofen",
@@ -1350,7 +1352,8 @@ export default function PricesScreen() {
           <View>
             <Text style={S.productName}>{result.genericName}</Text>
             <Text style={S.productStrength}>
-              {result.strength} · sorted by lowest price
+              {result.strength} · sorted by lowest price · prices as of{" "}
+              {PRICE_DATA_UPDATED}
             </Text>
 
             {/* Local pharmacy slot */}

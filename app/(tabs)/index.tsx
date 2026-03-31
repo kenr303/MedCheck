@@ -1,8 +1,7 @@
 import { useRouter } from "expo-router";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
-  Alert,
   ScrollView,
   StyleSheet,
   Text,
@@ -17,228 +16,48 @@ import {
   saveLastProduct,
   saveRecentSearches,
 } from "../../store/cache";
-import { lookupSupplement } from "../../store/supplementData";
+import { lookupByUPC, lookupProduct } from "../../store/lookup";
 import { COLOR, FONT, RADIUS, SPACE } from "../../store/theme";
-import { Ingredient, MedProduct, useMedStore } from "../../store/useMedStore";
+import { MedProduct, useMedStore } from "../../store/useMedStore";
 
-function cleanIngredientName(raw: string): {
-  name: string;
-  concentration: string;
-} {
-  let s = raw
-    .replace(/active\s+ingredient[s]?\s*(\(in\s+each\s+[\w\s]+\))?\s*/gi, "")
-    .replace(/each\s+[\w\s]+\s+contains\s*/gi, "")
-    .replace(/^\s*[:;-]\s*/g, "")
-    .trim();
-  const concMatch = s.match(
-    /([\d.]+\s*(?:mg|mcg|mL|g|%|IU|units?)(?:\s*\/\s*[\w.]+)?)\s*$/i,
-  );
-  const concentration = concMatch ? concMatch[1].trim() : "";
-  const name = concMatch ? s.slice(0, concMatch.index).trim() : s;
-  return { name: name || s, concentration };
-}
-
-function parseIngredients(r: any): Ingredient[] {
-  const purposeList: string[] = (r.purpose || []).map((p: string) =>
-    p.replace(/^purpose\s*/i, "").trim(),
-  );
-  const raw: string[] = r.active_ingredient || r.active_ingredients || [];
-  if (raw.length === 0) return [];
-  return raw.map((ing: string, i: number) => {
-    const { name, concentration } = cleanIngredientName(ing);
-    return {
-      name,
-      concentration,
-      purpose: purposeList[i] || purposeList[0] || "",
-    };
-  });
-}
-
-async function lookupFDA(
-  query: string,
-): Promise<{ product: MedProduct; raw: any } | null> {
-  const q = encodeURIComponent(query.trim());
-  const urls = [
-    `https://api.fda.gov/drug/label.json?search=openfda.brand_name:${q}&limit=1`,
-    `https://api.fda.gov/drug/label.json?search=openfda.generic_name:${q}&limit=1`,
-    `https://api.fda.gov/drug/label.json?search=openfda.substance_name:${q}&limit=1`,
-    `https://api.fda.gov/drug/label.json?search=${q}&limit=1`,
-  ];
-  for (const url of urls) {
-    try {
-      const res = await fetch(url);
-      const data = await res.json();
-      if (data.results?.length > 0) {
-        const r = data.results[0];
-        const ingredients = parseIngredients(r);
-        if (ingredients.length === 0) continue;
-        const brandName =
-          r.openfda?.brand_name?.[0] ||
-          r.brand_name?.[0] ||
-          r.openfda?.generic_name?.[0] ||
-          query;
-        const manufacturer =
-          r.openfda?.manufacturer_name?.[0] || r.manufacturer_name?.[0] || "";
-        const form = (r.dosage_form?.[0] || "").toLowerCase();
-        const servingSizeRaw = (
-          r.dosage_and_administration?.[0] || ""
-        ).toLowerCase();
-        const servingSizeAlert =
-          servingSizeRaw.includes("2 tablet") ||
-          servingSizeRaw.includes("2 capsule") ||
-          servingSizeRaw.includes("two tablet") ||
-          servingSizeRaw.includes("two capsule")
-            ? "Dose requires 2 units — not 1. Check the label carefully."
-            : null;
-        const allText = JSON.stringify(r).toLowerCase();
-        const isBTC =
-          allText.includes("pseudoephedrine") || allText.includes("ephedrine");
-        const genericKey = (r.openfda?.generic_name?.[0] || "")
-          .toLowerCase()
-          .split(" ")[0];
-        return {
-          product: {
-            brandName,
-            manufacturer,
-            form,
-            ingredients,
-            servingSizeAlert,
-            isBTC,
-            genericKey,
-          },
-          raw: r,
-        };
-      }
-    } catch {
-      continue;
-    }
-  }
-  return null;
-}
-
-async function lookupDSLD(query: string): Promise<MedProduct | null> {
-  try {
-    const q = encodeURIComponent(query.trim());
-    const res = await fetch(
-      `https://api.ods.od.nih.gov/dsld/v9/browse-products?name=${q}&limit=1`,
-    );
-    const data = await res.json();
-    if (!data.data?.length) return null;
-    const product = data.data[0];
-    const detailRes = await fetch(
-      `https://api.ods.od.nih.gov/dsld/v9/product/${product.id}/label-info`,
-    );
-    const detail = await detailRes.json();
-    const ingredients: Ingredient[] = (detail.servingIngredients || [])
-      .map((ing: any) => ({
-        name: ing.ingredientName || ing.name || "",
-        concentration: ing.quantity
-          ? `${ing.quantity} ${ing.unit || ""}`.trim()
-          : "",
-        purpose: ing.role || "",
-      }))
-      .filter((i: Ingredient) => i.name);
-    const servingSizeQty = detail.servingSize?.quantity || "";
-    const servingSizeUnit = detail.servingSize?.unit || "";
-    const servingSizeAlert =
-      (parseInt(servingSizeQty) > 1 &&
-        servingSizeUnit.toLowerCase().includes("tablet")) ||
-      (parseInt(servingSizeQty) > 1 &&
-        servingSizeUnit.toLowerCase().includes("capsule"))
-        ? `Serving size is ${servingSizeQty} ${servingSizeUnit} — not 1.`
-        : null;
-    return {
-      brandName: product.brandName || product.name || query,
-      manufacturer: product.manufacturer || "",
-      form: servingSizeUnit || "supplement",
-      ingredients,
-      servingSizeAlert,
-      isBTC: false,
-      genericKey: "",
-    };
-  } catch {
-    return null;
-  }
-}
-
-async function lookupByUPC(upc: string): Promise<MedProduct | null> {
-  const fdaUrls = [
-    `https://api.fda.gov/drug/label.json?search=openfda.upc:${upc}&limit=1`,
-    `https://api.fda.gov/drug/label.json?search=openfda.package_ndc:${upc}&limit=1`,
-  ];
-  for (const url of fdaUrls) {
-    try {
-      const res = await fetch(url);
-      const data = await res.json();
-      if (data.results?.length > 0) {
-        const r = await lookupFDA(upc);
-        return r?.product || null;
-      }
-    } catch {
-      continue;
-    }
-  }
-  try {
-    const res = await fetch(
-      `https://world.openfoodfacts.org/api/v0/product/${upc}.json`,
-    );
-    const data = await res.json();
-    if (data.status === 1 && data.product) {
-      const name = data.product.product_name || data.product.generic_name || "";
-      if (name) {
-        const fdaResult = await lookupFDA(name);
-        if (fdaResult) return fdaResult.product;
-        return await lookupDSLD(name);
-      }
-    }
-  } catch {}
-  try {
-    const res = await fetch(
-      `https://api.upcitemdb.com/prod/trial/lookup?upc=${upc}`,
-    );
-    const data = await res.json();
-    if (data.items?.length > 0) {
-      const name = data.items[0].title || "";
-      if (name) {
-        const fdaResult = await lookupFDA(name);
-        if (fdaResult) return fdaResult.product;
-        return await lookupDSLD(name);
-      }
-    }
-  } catch {}
-  return null;
-}
-
-const SUPPLEMENT_KEYWORDS = [
-  "vitamin",
-  "calcium",
-  "magnesium",
-  "zinc",
-  "iron",
-  "omega",
-  "fish oil",
-  "probiotic",
-  "melatonin",
-  "biotin",
-  "collagen",
-  "turmeric",
-  "elderberry",
-  "echinacea",
-  "glucosamine",
-  "coq10",
-  "b12",
-  "folate",
-  "folic",
-  "selenium",
-  "potassium",
-  "multivitamin",
-  "supplement",
-  "herbal",
+// Comprehensive list for autocomplete + not-found suggestions
+const KNOWN_NAMES = [
+  // Generic drug names
+  "acetaminophen", "ibuprofen", "naproxen", "aspirin", "loratadine",
+  "cetirizine", "fexofenadine", "diphenhydramine", "omeprazole", "famotidine",
+  "ranitidine", "esomeprazole", "lansoprazole", "loperamide", "simethicone",
+  "guaifenesin", "dextromethorphan", "pseudoephedrine", "phenylephrine",
+  "meclizine", "bismuth subsalicylate", "hydrocortisone", "miconazole",
+  "clotrimazole", "terbinafine", "minoxidil", "benzoyl peroxide",
+  "salicylic acid", "docusate sodium", "polyethylene glycol", "senna",
+  // Brand names
+  "tylenol", "advil", "motrin", "aleve", "claritin", "zyrtec", "allegra",
+  "benadryl", "prilosec", "nexium", "pepcid", "imodium", "gas-x", "mucinex",
+  "robitussin", "sudafed", "nyquil", "dayquil", "theraflu", "excedrin",
+  "midol", "dramamine", "pepto-bismol", "metamucil", "miralax", "dulcolax",
+  "preparation h", "cortaid",
+  // Supplements
+  "vitamin c", "vitamin d", "vitamin d3", "vitamin b12", "vitamin e",
+  "vitamin k", "vitamin a", "vitamin b6", "folic acid", "folate",
+  "calcium", "magnesium", "zinc", "iron", "selenium", "potassium",
+  "fish oil", "omega-3", "melatonin", "biotin", "collagen",
+  "turmeric", "elderberry", "echinacea", "glucosamine", "coq10",
+  "multivitamin", "probiotics", "ashwagandha", "valerian root",
+  "ginkgo biloba",
 ];
 
-function looksLikeSupplement(query: string): boolean {
-  const q = query.toLowerCase();
-  return SUPPLEMENT_KEYWORDS.some((k) => q.includes(k));
+function looksLikeUPC(q: string): boolean {
+  return /^\d{8,14}$/.test(q.trim());
+}
+
+function getSuggestions(q: string): string[] {
+  if (q.length < 2) return [];
+  const lower = q.toLowerCase();
+  const startsWith = KNOWN_NAMES.filter((n) => n.startsWith(lower));
+  const contains = KNOWN_NAMES.filter(
+    (n) => n.includes(lower) && !n.startsWith(lower),
+  );
+  return [...startsWith, ...contains].slice(0, 6);
 }
 
 export default function LookupScreen() {
@@ -252,6 +71,7 @@ export default function LookupScreen() {
     setCompareB,
     recentSearches,
     addRecentSearch,
+    clearRecentSearches,
   } = useMedStore();
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(false);
@@ -259,9 +79,18 @@ export default function LookupScreen() {
   const [scannerOpen, setScannerOpen] = useState(false);
   const [source, setSource] = useState<"drug" | "supplement" | null>(null);
   const [offlineBanner, setOfflineBanner] = useState(false);
+  const [notFound, setNotFound] = useState(false);
+  const [notFoundQuery, setNotFoundQuery] = useState("");
+
+  const suggestions = useMemo(() => getSuggestions(query), [query]);
+  const showSuggestions =
+    suggestions.length > 0 && !product && !loading && !notFound;
+  const notFoundSuggestions = useMemo(
+    () => getSuggestions(notFoundQuery).slice(0, 4),
+    [notFoundQuery],
+  );
 
   useEffect(() => {
-    // Load cached recent searches and last product on first open
     loadRecentSearches().then((searches) => {
       searches.forEach((s) => addRecentSearch(s));
     });
@@ -271,9 +100,9 @@ export default function LookupScreen() {
     p: MedProduct | null,
     src: "drug" | "supplement",
     raw: any = null,
+    searchedQuery: string = "",
   ) => {
     if (!p) {
-      // Try loading from cache before showing error
       const cached = await loadLastProduct();
       if (cached?.product) {
         setProduct(cached.product);
@@ -284,14 +113,13 @@ export default function LookupScreen() {
         setLoading(false);
         return;
       }
-      Alert.alert(
-        "Not found",
-        "Try the generic name.\n\nDrug examples:\n• Tylenol → acetaminophen\n• Advil → ibuprofen\n• Claritin → loratadine\n\nSupplement examples:\n• vitamin c\n• calcium\n• fish oil\n• melatonin",
-      );
+      setNotFound(true);
+      setNotFoundQuery(searchedQuery);
       setLoading(false);
       return;
     }
     setOfflineBanner(false);
+    setNotFound(false);
     setProduct(p);
     setSource(src);
     setCurrentProduct(p);
@@ -302,48 +130,43 @@ export default function LookupScreen() {
     setLoading(false);
   };
 
-  const searchProduct = async () => {
-    if (!query.trim()) return;
+  const searchProduct = async (overrideQuery?: string) => {
+    const q = (overrideQuery ?? query).trim();
+    if (!q) return;
     setLoading(true);
     setProduct(null);
     setSource(null);
-    const q = query.trim();
-    if (looksLikeSupplement(q)) {
-      const local = lookupSupplement(q);
-      if (local) {
-        finishLookup(local, "supplement", null);
-        return;
-      }
-      const dsld = await lookupDSLD(q);
-      if (dsld) {
-        finishLookup(dsld, "supplement", null);
-        return;
-      }
-      const fdaResult = await lookupFDA(q);
-      finishLookup(fdaResult?.product || null, "drug", fdaResult?.raw || null);
-    } else {
-      const fdaResult = await lookupFDA(q);
-      if (fdaResult) {
-        finishLookup(fdaResult.product, "drug", fdaResult.raw);
-        return;
-      }
-      const local = lookupSupplement(q);
-      if (local) {
-        finishLookup(local, "supplement", null);
-        return;
-      }
-      const dsld = await lookupDSLD(q);
-      finishLookup(dsld, "supplement", null);
+    setNotFound(false);
+    if (looksLikeUPC(q)) {
+      const result = await lookupByUPC(q);
+      finishLookup(result, "drug", null, q);
+      return;
     }
+    const result = await lookupProduct(q);
+    finishLookup(
+      result?.product || null,
+      result?.source || "drug",
+      result?.raw || null,
+      q,
+    );
   };
 
   const handleScanned = async (upc: string) => {
     setScannerOpen(false);
     setLoading(true);
     setProduct(null);
+    setNotFound(false);
     setQuery(upc);
     const result = await lookupByUPC(upc);
-    finishLookup(result, "drug", null);
+    finishLookup(result, "drug", null, upc);
+  };
+
+  const handleClear = () => {
+    setQuery("");
+    setProduct(null);
+    setSource(null);
+    setOfflineBanner(false);
+    setNotFound(false);
   };
 
   const handleSeePrices = () => {
@@ -356,214 +179,301 @@ export default function LookupScreen() {
     if (!product) return;
     if (!compareA) {
       setCompareA(product);
-      Alert.alert(
-        "Added",
+      alert(
         `${product.brandName} added as Product A.\n\nSearch another product and tap Add to compare for Product B.`,
       );
     } else if (!compareB) {
       setCompareB(product);
-      Alert.alert(
-        "Added",
-        `${product.brandName} added as Product B. Go to the Compare tab.`,
-      );
+      alert(`${product.brandName} added as Product B. Go to the Compare tab.`);
     } else {
-      Alert.alert("Compare slots full", "Replace Product A?", [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Replace A",
-          onPress: () => {
-            setCompareA(product);
-            Alert.alert("Done", "Product A replaced.");
-          },
-        },
-      ]);
+      setCompareA(product);
+      alert("Compare slots full — Product A replaced.");
     }
   };
 
   return (
-    <ScrollView style={S.container} keyboardShouldPersistTaps="handled">
-      <View style={S.inner}>
+    <View style={S.root}>
+      <ScrollView
+        style={S.scroll}
+        contentContainerStyle={S.scrollContent}
+        keyboardShouldPersistTaps="handled"
+      >
+        <View style={S.inner}>
+          {/* Search bar */}
+          <View style={S.searchRow}>
+            <View style={S.inputWrap}>
+              <TextInput
+                style={S.input}
+                placeholder="Drug name, brand, or UPC number..."
+                placeholderTextColor={COLOR.textMuted}
+                value={query}
+                onChangeText={(t) => {
+                  setQuery(t);
+                  if (notFound) setNotFound(false);
+                }}
+                onSubmitEditing={() => searchProduct()}
+                returnKeyType="search"
+                autoCorrect={false}
+                autoCapitalize="none"
+                keyboardType="default"
+              />
+              {(query.length > 0 || !!product) && (
+                <TouchableOpacity style={S.clearBtn} onPress={handleClear}>
+                  <Text style={S.clearBtnText}>✕</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+            <TouchableOpacity
+              style={S.searchBtn}
+              onPress={() => searchProduct()}
+            >
+              <Text style={S.searchBtnText}>Search</Text>
+            </TouchableOpacity>
+          </View>
+
+          <Text style={S.hint}>
+            Drug name, brand name, or scan/enter UPC barcode number
+          </Text>
+
+          {/* Autocomplete suggestions */}
+          {showSuggestions && (
+            <View style={S.suggestionsBox}>
+              {suggestions.map((s, i) => (
+                <TouchableOpacity
+                  key={i}
+                  style={[
+                    S.suggestionRow,
+                    i === suggestions.length - 1 && S.suggestionRowLast,
+                  ]}
+                  onPress={() => {
+                    setQuery(s);
+                    searchProduct(s);
+                  }}
+                  activeOpacity={0.7}
+                >
+                  <Text style={S.suggestionIcon}>⌕</Text>
+                  <Text style={S.suggestionText}>{s}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
+
+          {/* Recent searches */}
+          {recentSearches.length > 0 && !product && !loading && !showSuggestions && !notFound && (
+            <View style={S.recentWrap}>
+              <View style={S.recentHeader}>
+                <Text style={S.recentTitle}>Recent searches</Text>
+                <TouchableOpacity
+                  onPress={() => {
+                    clearRecentSearches();
+                    saveRecentSearches([]);
+                  }}
+                >
+                  <Text style={S.recentClear}>Clear</Text>
+                </TouchableOpacity>
+              </View>
+              <View style={S.recentList}>
+                {recentSearches.map((item, i) => (
+                  <TouchableOpacity
+                    key={i}
+                    style={S.recentChip}
+                    onPress={() => {
+                      setQuery(item);
+                      searchProduct(item);
+                    }}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={S.recentChipText}>{item}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+          )}
+
+          {/* Offline banner */}
+          {offlineBanner && (
+            <View style={S.offlineBanner}>
+              <Text style={S.offlineBannerText}>
+                ⚠ No internet — showing last saved result.
+              </Text>
+            </View>
+          )}
+
+          {/* Loading */}
+          {loading && (
+            <View style={S.loadingWrap}>
+              <ActivityIndicator size="large" color={COLOR.primaryMid} />
+              <Text style={S.loadingText}>Searching databases...</Text>
+            </View>
+          )}
+
+          {/* Not found */}
+          {notFound && !loading && (
+            <View style={S.notFoundCard}>
+              <Text style={S.notFoundTitle}>
+                No results for &ldquo;{notFoundQuery}&rdquo;
+              </Text>
+              <Text style={S.notFoundText}>
+                Check the spelling or try the generic name (e.g. Tylenol →
+                acetaminophen, Advil → ibuprofen).
+              </Text>
+              {notFoundSuggestions.length > 0 && (
+                <>
+                  <Text style={S.notFoundSugLabel}>Did you mean:</Text>
+                  <View style={S.recentList}>
+                    {notFoundSuggestions.map((s, i) => (
+                      <TouchableOpacity
+                        key={i}
+                        style={S.recentChip}
+                        onPress={() => {
+                          setNotFound(false);
+                          setQuery(s);
+                          searchProduct(s);
+                        }}
+                        activeOpacity={0.7}
+                      >
+                        <Text style={S.recentChipText}>{s}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </>
+              )}
+            </View>
+          )}
+
+          {/* Result */}
+          {product && (
+            <View style={S.resultWrap}>
+              <View style={S.productHeader}>
+                <View style={S.productHeaderLeft}>
+                  <Text style={S.productName}>{product.brandName}</Text>
+                  {product.form ? (
+                    <Text style={S.productForm}>{product.form}</Text>
+                  ) : null}
+                  {product.manufacturer ? (
+                    <Text style={S.manufacturer}>{product.manufacturer}</Text>
+                  ) : null}
+                </View>
+                {source && (
+                  <View
+                    style={[
+                      S.sourceBadge,
+                      source === "supplement"
+                        ? S.sourceBadgeSupp
+                        : S.sourceBadgeDrug,
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        S.sourceBadgeText,
+                        source === "supplement"
+                          ? S.sourceBadgeSuppText
+                          : S.sourceBadgeDrugText,
+                      ]}
+                    >
+                      {source === "supplement" ? "Supplement" : "OTC Drug"}
+                    </Text>
+                  </View>
+                )}
+              </View>
+
+              {product.isBTC && (
+                <View style={S.alertBTC}>
+                  <Text style={S.alertBTCTitle}>
+                    Behind-the-counter product
+                  </Text>
+                  <Text style={S.alertBTCText}>
+                    Valid photo ID required. Federal purchase limit applies.
+                  </Text>
+                </View>
+              )}
+
+              {product.servingSizeAlert && (
+                <View style={S.alertWarn}>
+                  <Text style={S.alertWarnText}>
+                    ⚠ {product.servingSizeAlert}
+                  </Text>
+                </View>
+              )}
+
+              {product.ingredients.length > 0 ? (
+                <View style={S.card}>
+                  <View style={S.cardHeader}>
+                    <Text style={S.cardHeaderLeft}>
+                      {source === "supplement"
+                        ? "Supplement facts"
+                        : "Active ingredients"}
+                    </Text>
+                    <Text style={S.cardHeaderRight}>Purpose</Text>
+                  </View>
+                  {product.ingredients.map((ing, i) => (
+                    <View
+                      key={i}
+                      style={[
+                        S.ingrRow,
+                        i === product.ingredients.length - 1 && S.ingrRowLast,
+                      ]}
+                    >
+                      <View style={S.ingrLeft}>
+                        <Text style={S.ingrNum}>{i + 1}.</Text>
+                        <View style={S.ingrNameWrap}>
+                          <Text style={S.ingrName}>{ing.name}</Text>
+                          {ing.concentration ? (
+                            <Text style={S.ingrConc}>{ing.concentration}</Text>
+                          ) : null}
+                        </View>
+                      </View>
+                      {ing.purpose ? (
+                        <Text style={S.ingrPurpose}>{ing.purpose}</Text>
+                      ) : null}
+                    </View>
+                  ))}
+                </View>
+              ) : (
+                <View style={S.alertWarn}>
+                  <Text style={S.alertWarnText}>
+                    Ingredient details not available for this product.
+                  </Text>
+                </View>
+              )}
+
+              <View style={S.actionRow}>
+                <TouchableOpacity
+                  style={S.actionBtn}
+                  onPress={handleSeePrices}
+                >
+                  <Text style={S.actionBtnText}>See prices</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={S.actionBtn}
+                  onPress={handleAddToCompare}
+                >
+                  <Text style={S.actionBtnText}>Add to compare</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[S.actionBtn, S.actionBtnGray]}
+                  onPress={() => router.push("/product-detail")}
+                >
+                  <Text style={[S.actionBtnText, S.actionBtnGrayText]}>
+                    More about this
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
+        </View>
+      </ScrollView>
+
+      {/* Floating scan button — thumb-friendly bottom placement */}
+      <View style={S.floatingWrap}>
         <TouchableOpacity
-          style={S.scanBtn}
+          style={S.floatingScanBtn}
           onPress={() => setScannerOpen(true)}
+          activeOpacity={0.85}
         >
           <Text style={S.scanIcon}>▦</Text>
           <Text style={S.scanBtnText}>Scan barcode</Text>
         </TouchableOpacity>
-
-        <Text style={S.divider}>— or search by name —</Text>
-
-        <View style={S.searchRow}>
-          <TextInput
-            style={S.input}
-            placeholder="Drug or supplement name..."
-            placeholderTextColor={COLOR.textMuted}
-            value={query}
-            onChangeText={setQuery}
-            onSubmitEditing={searchProduct}
-            returnKeyType="search"
-            autoCorrect={false}
-            autoCapitalize="none"
-          />
-          <TouchableOpacity style={S.searchBtn} onPress={searchProduct}>
-            <Text style={S.searchBtnText}>Search</Text>
-          </TouchableOpacity>
-        </View>
-
-        <Text style={S.hint}>
-          Drugs: acetaminophen, ibuprofen, loratadine{"\n"}
-          Supplements: vitamin c, calcium, fish oil, melatonin
-        </Text>
-
-        {recentSearches.length > 0 && !product && !loading && (
-          <View style={S.recentWrap}>
-            <Text style={S.recentTitle}>Recent searches</Text>
-            <View style={S.recentList}>
-              {recentSearches.map((item, i) => (
-                <TouchableOpacity
-                  key={i}
-                  style={S.recentChip}
-                  onPress={() => {
-                    setQuery(item);
-                  }}
-                  activeOpacity={0.7}
-                >
-                  <Text style={S.recentChipText}>{item}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          </View>
-        )}
-
-        {offlineBanner && (
-          <View style={S.offlineBanner}>
-            <Text style={S.offlineBannerText}>
-              ⚠ No internet connection — showing last saved result.
-            </Text>
-          </View>
-        )}
-
-        {loading && (
-          <View style={S.loadingWrap}>
-            <ActivityIndicator size="large" color={COLOR.primaryMid} />
-            <Text style={S.loadingText}>Searching databases...</Text>
-          </View>
-        )}
-
-        {product && (
-          <View style={S.resultWrap}>
-            <View style={S.productHeader}>
-              <View style={S.productHeaderLeft}>
-                <Text style={S.productName}>{product.brandName}</Text>
-                {product.form ? (
-                  <Text style={S.productForm}>{product.form}</Text>
-                ) : null}
-                {product.manufacturer ? (
-                  <Text style={S.manufacturer}>{product.manufacturer}</Text>
-                ) : null}
-              </View>
-              {source && (
-                <View
-                  style={[
-                    S.sourceBadge,
-                    source === "supplement"
-                      ? S.sourceBadgeSupp
-                      : S.sourceBadgeDrug,
-                  ]}
-                >
-                  <Text
-                    style={[
-                      S.sourceBadgeText,
-                      source === "supplement"
-                        ? S.sourceBadgeSuppText
-                        : S.sourceBadgeDrugText,
-                    ]}
-                  >
-                    {source === "supplement" ? "Supplement" : "OTC Drug"}
-                  </Text>
-                </View>
-              )}
-            </View>
-
-            {product.isBTC && (
-              <View style={S.alertBTC}>
-                <Text style={S.alertBTCTitle}>Behind-the-counter product</Text>
-                <Text style={S.alertBTCText}>
-                  Valid photo ID required. Federal purchase limit applies.
-                </Text>
-              </View>
-            )}
-
-            {product.servingSizeAlert && (
-              <View style={S.alertWarn}>
-                <Text style={S.alertWarnText}>
-                  ⚠ {product.servingSizeAlert}
-                </Text>
-              </View>
-            )}
-
-            {product.ingredients.length > 0 ? (
-              <View style={S.card}>
-                <View style={S.cardHeader}>
-                  <Text style={S.cardHeaderLeft}>
-                    {source === "supplement"
-                      ? "Supplement facts"
-                      : "Active ingredients"}
-                  </Text>
-                  <Text style={S.cardHeaderRight}>Purpose</Text>
-                </View>
-                {product.ingredients.map((ing, i) => (
-                  <View
-                    key={i}
-                    style={[
-                      S.ingrRow,
-                      i === product.ingredients.length - 1 && S.ingrRowLast,
-                    ]}
-                  >
-                    <View style={S.ingrLeft}>
-                      <Text style={S.ingrNum}>{i + 1}.</Text>
-                      <View style={S.ingrNameWrap}>
-                        <Text style={S.ingrName}>{ing.name}</Text>
-                        {ing.concentration ? (
-                          <Text style={S.ingrConc}>{ing.concentration}</Text>
-                        ) : null}
-                      </View>
-                    </View>
-                    {ing.purpose ? (
-                      <Text style={S.ingrPurpose}>{ing.purpose}</Text>
-                    ) : null}
-                  </View>
-                ))}
-              </View>
-            ) : (
-              <View style={S.alertWarn}>
-                <Text style={S.alertWarnText}>
-                  Ingredient details not available for this product.
-                </Text>
-              </View>
-            )}
-
-            <View style={S.actionRow}>
-              <TouchableOpacity style={S.actionBtn} onPress={handleSeePrices}>
-                <Text style={S.actionBtnText}>See prices</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={S.actionBtn}
-                onPress={handleAddToCompare}
-              >
-                <Text style={S.actionBtnText}>Add to compare</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[S.actionBtn, S.actionBtnGray]}
-                onPress={() => router.push("/product-detail")}
-              >
-                <Text style={[S.actionBtnText, S.actionBtnGrayText]}>
-                  More about this
-                </Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        )}
       </View>
 
       <BarcodeScanner
@@ -571,53 +481,40 @@ export default function LookupScreen() {
         onClose={() => setScannerOpen(false)}
         onScanned={handleScanned}
       />
-    </ScrollView>
+    </View>
   );
 }
 
 const S = StyleSheet.create({
-  container: { flex: 1, backgroundColor: COLOR.bg },
+  root: { flex: 1, backgroundColor: COLOR.bg },
+  scroll: { flex: 1 },
+  scrollContent: { paddingBottom: 100 },
   inner: { padding: SPACE.md },
 
-  scanBtn: {
+  searchRow: { flexDirection: "row", gap: SPACE.sm, marginBottom: SPACE.sm },
+  inputWrap: {
+    flex: 1,
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
-    gap: SPACE.sm,
-    backgroundColor: COLOR.white,
-    borderRadius: RADIUS.md,
-    borderWidth: 1.5,
-    borderColor: "#ccc",
-    borderStyle: "dashed",
-    paddingVertical: 18,
-    marginBottom: 14,
-  },
-  scanIcon: { fontSize: 24, color: COLOR.primaryMid },
-  scanBtnText: {
-    fontSize: FONT.md,
-    color: COLOR.primaryMid,
-    fontWeight: "500",
-  },
-
-  divider: {
-    textAlign: "center",
-    fontSize: FONT.sm,
-    color: COLOR.textMuted,
-    marginBottom: 14,
-  },
-
-  searchRow: { flexDirection: "row", gap: SPACE.sm, marginBottom: SPACE.sm },
-  input: {
-    flex: 1,
     backgroundColor: COLOR.white,
     borderRadius: RADIUS.sm,
     borderWidth: 1.5,
     borderColor: "#ccc",
+  },
+  input: {
+    flex: 1,
     paddingHorizontal: 16,
     paddingVertical: 14,
     fontSize: FONT.md,
     color: COLOR.text,
   },
+  clearBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 14,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  clearBtnText: { fontSize: FONT.md, color: COLOR.textMuted },
   searchBtn: {
     backgroundColor: COLOR.primaryMid,
     borderRadius: RADIUS.sm,
@@ -632,14 +529,82 @@ const S = StyleSheet.create({
     marginBottom: SPACE.md,
     lineHeight: 20,
   },
-  recentWrap: { marginBottom: SPACE.md },
-  recentTitle: {
+
+  // Autocomplete suggestions
+  suggestionsBox: {
+    backgroundColor: COLOR.white,
+    borderRadius: RADIUS.sm,
+    borderWidth: 1,
+    borderColor: COLOR.border,
+    marginBottom: SPACE.md,
+    overflow: "hidden",
+  },
+  suggestionRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 16,
+    paddingVertical: 13,
+    borderBottomWidth: 0.5,
+    borderBottomColor: "#eee",
+    gap: 10,
+  },
+  suggestionRowLast: { borderBottomWidth: 0 },
+  suggestionIcon: { fontSize: FONT.md, color: COLOR.textMuted },
+  suggestionText: {
+    fontSize: FONT.md,
+    color: COLOR.text,
+    textTransform: "capitalize",
+  },
+
+  // Not found
+  notFoundCard: {
+    backgroundColor: COLOR.white,
+    borderRadius: RADIUS.md,
+    borderWidth: 0.5,
+    borderColor: COLOR.border,
+    padding: 18,
+    marginBottom: SPACE.md,
+  },
+  notFoundTitle: {
+    fontSize: FONT.lg,
+    fontWeight: "600",
+    color: COLOR.text,
+    marginBottom: 8,
+  },
+  notFoundText: {
+    fontSize: FONT.sm,
+    color: COLOR.textSub,
+    lineHeight: 22,
+    marginBottom: 14,
+  },
+  notFoundSugLabel: {
     fontSize: FONT.xs,
     fontWeight: "600",
     color: COLOR.textMuted,
     textTransform: "uppercase",
     letterSpacing: 0.5,
     marginBottom: 10,
+  },
+
+  // Recent searches
+  recentWrap: { marginBottom: SPACE.md },
+  recentHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 10,
+  },
+  recentTitle: {
+    fontSize: FONT.xs,
+    fontWeight: "600",
+    color: COLOR.textMuted,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
+  recentClear: {
+    fontSize: FONT.xs,
+    color: COLOR.textMuted,
+    fontWeight: "500",
   },
   recentList: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   recentChip: {
@@ -655,6 +620,7 @@ const S = StyleSheet.create({
     color: COLOR.primaryMid,
     fontWeight: "500",
   },
+
   offlineBanner: {
     backgroundColor: "#FFF3CD",
     borderRadius: RADIUS.sm,
@@ -819,4 +785,33 @@ const S = StyleSheet.create({
   },
   actionBtnGray: { borderColor: "#ccc" },
   actionBtnGrayText: { color: COLOR.textSub },
+
+  // Floating scan button
+  floatingWrap: {
+    position: "absolute",
+    bottom: 0,
+    left: 0,
+    right: 0,
+    paddingHorizontal: SPACE.md,
+    paddingBottom: 24,
+    paddingTop: 12,
+    backgroundColor: "rgba(245,245,245,0.95)",
+    borderTopWidth: 0.5,
+    borderTopColor: COLOR.border,
+  },
+  floatingScanBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: SPACE.sm,
+    backgroundColor: COLOR.primaryMid,
+    borderRadius: RADIUS.md,
+    paddingVertical: 18,
+  },
+  scanIcon: { fontSize: 22, color: COLOR.white },
+  scanBtnText: {
+    fontSize: FONT.md,
+    color: COLOR.white,
+    fontWeight: "600",
+  },
 });

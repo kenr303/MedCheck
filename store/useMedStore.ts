@@ -14,6 +14,7 @@ export type MedProduct = {
   servingSizeAlert: string | null;
   isBTC: boolean;
   genericKey: string;
+  bestPrice?: string;
 };
 
 type MedStore = {

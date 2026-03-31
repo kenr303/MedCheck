@@ -12,110 +12,9 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import { lookupProduct } from "../../store/lookup";
 import { COLOR, FONT, RADIUS, SPACE } from "../../store/theme";
-import { Ingredient, MedProduct, useMedStore } from "../../store/useMedStore";
-
-function cleanIngredientName(raw: string): {
-  name: string;
-  concentration: string;
-} {
-  let s = raw
-    .replace(/active\s+ingredient[s]?\s*(\(in\s+each\s+[\w\s]+\))?\s*/gi, "")
-    .replace(/each\s+[\w\s]+\s+contains\s*/gi, "")
-    .replace(/^\s*[:;-]\s*/g, "")
-    .trim();
-  const concMatch = s.match(
-    /([\d.]+\s*(?:mg|mcg|mL|g|%|IU|units?)(?:\s*\/\s*[\w.]+)?)\s*$/i,
-  );
-  const concentration = concMatch ? concMatch[1].trim() : "";
-  const name = concMatch ? s.slice(0, concMatch.index).trim() : s;
-  return { name: name || s, concentration };
-}
-
-function parseIngredients(r: any): Ingredient[] {
-  const purposeList: string[] = (r.purpose || []).map((p: string) =>
-    p.replace(/^purpose\s*/i, "").trim(),
-  );
-  const raw: string[] = r.active_ingredient || r.active_ingredients || [];
-  if (raw.length === 0) return [];
-  return raw.map((ing: string, i: number) => {
-    const { name, concentration } = cleanIngredientName(ing);
-    return {
-      name,
-      concentration,
-      purpose: purposeList[i] || purposeList[0] || "",
-    };
-  });
-}
-
-const BEST_PRICES: Record<string, string> = {
-  acetaminophen: "$4.88 (Walmart)",
-  ibuprofen: "$4.48 (Walmart)",
-  naproxen: "$6.48 (Walmart)",
-  aspirin: "$3.88 (Walmart)",
-  loratadine: "$6.88 (Walmart)",
-  cetirizine: "$7.88 (Walmart)",
-  diphenhydramine: "$3.98 (Walmart)",
-  omeprazole: "$9.88 (Walmart)",
-  famotidine: "$7.48 (Walmart)",
-  loperamide: "$5.48 (Walmart)",
-  simethicone: "$5.48 (Walmart)",
-  guaifenesin: "$7.48 (Walmart)",
-  dextromethorphan: "$4.98 (Walmart)",
-  melatonin: "$8.88 (Walmart)",
-  calcium: "$5.88 (Walmart)",
-  "vitamin d": "$4.88 (Walmart)",
-  "fish oil": "$7.88 (Walmart)",
-};
-
-async function fetchProduct(query: string): Promise<MedProduct | null> {
-  const q = encodeURIComponent(query.trim());
-  const urls = [
-    `https://api.fda.gov/drug/label.json?search=openfda.brand_name:${q}&limit=1`,
-    `https://api.fda.gov/drug/label.json?search=openfda.generic_name:${q}&limit=1`,
-    `https://api.fda.gov/drug/label.json?search=openfda.substance_name:${q}&limit=1`,
-    `https://api.fda.gov/drug/label.json?search=${q}&limit=1`,
-  ];
-  let result = null;
-  for (const url of urls) {
-    try {
-      const res = await fetch(url);
-      const data = await res.json();
-      if (data.results?.length > 0) {
-        result = data.results[0];
-        break;
-      }
-    } catch {
-      continue;
-    }
-  }
-  if (!result) return null;
-  const r = result;
-  const ingredients = parseIngredients(r);
-  const brandName =
-    r.openfda?.brand_name?.[0] ||
-    r.brand_name?.[0] ||
-    r.openfda?.generic_name?.[0] ||
-    query;
-  const form = (r.dosage_form?.[0] || "").toLowerCase();
-  const allText = JSON.stringify(r).toLowerCase();
-  const isBTC =
-    allText.includes("pseudoephedrine") || allText.includes("ephedrine");
-  const genericKey = (r.openfda?.generic_name?.[0] || "")
-    .toLowerCase()
-    .split(" ")[0];
-  const bestPrice = BEST_PRICES[genericKey] || "See prices tab";
-  return {
-    brandName,
-    manufacturer: r.openfda?.manufacturer_name?.[0] || "",
-    form,
-    ingredients,
-    isBTC,
-    genericKey,
-    servingSizeAlert: null,
-    bestPrice,
-  } as any;
-}
+import { MedProduct, useMedStore } from "../../store/useMedStore";
 
 type SlotProps = {
   label: string;
@@ -175,15 +74,15 @@ export default function CompareScreen() {
     setModalVisible(false);
     if (activeSlot === "a") setLoadingA(true);
     else setLoadingB(true);
-    const result = await fetchProduct(searchQuery.trim());
+    const result = await lookupProduct(searchQuery.trim());
     if (!result) {
       Alert.alert(
         "Not found",
-        "Try the generic name (e.g. acetaminophen, ibuprofen, loratadine).",
+        "Try the generic name (e.g. acetaminophen, ibuprofen, loratadine, vitamin c).",
       );
     } else {
-      if (activeSlot === "a") setCompareA(result);
-      else setCompareB(result);
+      if (activeSlot === "a") setCompareA(result.product);
+      else setCompareB(result.product);
     }
     if (activeSlot === "a") setLoadingA(false);
     else setLoadingB(false);
@@ -235,9 +134,10 @@ export default function CompareScreen() {
               <View style={S.alertBTC}>
                 <Text style={S.alertBTCTitle}>Behind-the-counter product</Text>
                 <Text style={S.alertBTCText}>
-                  {compareA.isBTC ? compareA.brandName : compareB.brandName}{" "}
-                  contains pseudoephedrine. Valid ID required. Purchase limits
-                  apply.
+                  {compareA.isBTC && compareB.isBTC
+                    ? `${compareA.brandName} and ${compareB.brandName} both contain`
+                    : `${compareA.isBTC ? compareA.brandName : compareB.brandName} contains`}{" "}
+                  pseudoephedrine. Valid ID required. Purchase limits apply.
                 </Text>
               </View>
             )}
@@ -374,10 +274,10 @@ export default function CompareScreen() {
               <View style={[S.tableRow, S.tableRowLast]}>
                 <Text style={S.tdLabel}>Best price</Text>
                 <Text style={S.tdCell}>
-                  {(compareA as any).bestPrice || "—"}
+                  {compareA.bestPrice || "—"}
                 </Text>
                 <Text style={S.tdCell}>
-                  {(compareB as any).bestPrice || "—"}
+                  {compareB.bestPrice || "—"}
                 </Text>
               </View>
             </View>
