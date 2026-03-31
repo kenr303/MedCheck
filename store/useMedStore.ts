@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { OTCDrugFamily, OTCStrengthOption, OTCVariant } from "./otcDatabase";
 
 export type Ingredient = {
   name: string;
@@ -15,7 +16,13 @@ export type MedProduct = {
   isBTC: boolean;
   genericKey: string;
   bestPrice?: string;
+  // OTC database fields — present when found in curated OTC database
+  otcFamily?: OTCDrugFamily;  // full family (all variants)
+  priceKey?: string;          // PRICE_DB key for the default variant/strength
+  otcNote?: string;           // note for the default variant
 };
+
+export type { OTCDrugFamily, OTCStrengthOption, OTCVariant };
 
 type MedStore = {
   currentProduct: MedProduct | null;

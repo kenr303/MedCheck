@@ -78,6 +78,8 @@ export default function LookupScreen() {
   const [product, setProduct] = useState<MedProduct | null>(null);
   const [scannerOpen, setScannerOpen] = useState(false);
   const [source, setSource] = useState<"drug" | "supplement" | null>(null);
+  const [selectedVariantIdx, setSelectedVariantIdx] = useState(0);
+  const [selectedStrengthIdx, setSelectedStrengthIdx] = useState(0);
   const [offlineBanner, setOfflineBanner] = useState(false);
   const [notFound, setNotFound] = useState(false);
   const [notFoundQuery, setNotFoundQuery] = useState("");
@@ -169,10 +171,34 @@ export default function LookupScreen() {
     setNotFound(false);
   };
 
+  // Reset variant + strength selectors when a new product loads
+  useEffect(() => {
+    if (product?.otcFamily) {
+      setSelectedVariantIdx(product.otcFamily.defaultVariantIndex);
+    } else {
+      setSelectedVariantIdx(0);
+    }
+    setSelectedStrengthIdx(0);
+  }, [product?.genericKey]);
+
+  // Reset strength when variant changes
+  useEffect(() => {
+    setSelectedStrengthIdx(0);
+  }, [selectedVariantIdx]);
+
+  const currentVariant = product?.otcFamily?.variants[selectedVariantIdx] ?? null;
+  const selectedStrength = currentVariant?.strengths[selectedStrengthIdx] ?? null;
+  const displayedIngredients = selectedStrength?.ingredients ?? product?.ingredients ?? [];
+  const activePriceKey = selectedStrength?.priceKey || currentVariant?.strengths[0]?.priceKey || product?.priceKey || product?.genericKey || "";
+  const displayIsBTC = currentVariant?.isBTC ?? product?.isBTC ?? false;
+  const displayNote = currentVariant?.note ?? product?.otcNote;
+
   const handleSeePrices = () => {
     if (!product) return;
-    setCurrentProduct(product);
-    router.push("/(tabs)/prices");
+    // Pass the selected strength's priceKey so prices tab searches correctly
+    const updatedProduct = { ...product, priceKey: activePriceKey };
+    setCurrentProduct(updatedProduct);
+    router.push(`/(tabs)/prices?drug=${encodeURIComponent(activePriceKey)}`);
   };
 
   const handleAddToCompare = () => {
@@ -377,26 +403,92 @@ export default function LookupScreen() {
                 )}
               </View>
 
-              {product.isBTC && (
+              {/* Variant picker — shown when drug family has multiple products */}
+              {product.otcFamily && product.otcFamily.variants.length > 1 && (
+                <View style={S.strengthSection}>
+                  <Text style={S.strengthLabel}>Select product:</Text>
+                  <View style={S.strengthList}>
+                    {product.otcFamily.variants.map((v, i) => (
+                      <TouchableOpacity
+                        key={i}
+                        style={[
+                          S.strengthChip,
+                          i === selectedVariantIdx && S.strengthChipActive,
+                        ]}
+                        onPress={() => setSelectedVariantIdx(i)}
+                        activeOpacity={0.7}
+                      >
+                        <Text
+                          style={[
+                            S.strengthChipText,
+                            i === selectedVariantIdx && S.strengthChipTextActive,
+                          ]}
+                        >
+                          {v.chipLabel}
+                        </Text>
+                        {v.isBTC && (
+                          <Text style={S.strengthChipBTC}> BTC</Text>
+                        )}
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                  {currentVariant && (
+                    <Text style={S.variantDesc}>{currentVariant.genericDescription}</Text>
+                  )}
+                </View>
+              )}
+
+              {displayIsBTC && (
                 <View style={S.alertBTC}>
-                  <Text style={S.alertBTCTitle}>
-                    Behind-the-counter product
-                  </Text>
+                  <Text style={S.alertBTCTitle}>Behind-the-counter product</Text>
                   <Text style={S.alertBTCText}>
                     Valid photo ID required. Federal purchase limit applies.
                   </Text>
                 </View>
               )}
 
-              {product.servingSizeAlert && (
+              {displayNote && (
                 <View style={S.alertWarn}>
-                  <Text style={S.alertWarnText}>
-                    ⚠ {product.servingSizeAlert}
-                  </Text>
+                  <Text style={S.alertWarnText}>ℹ {displayNote}</Text>
                 </View>
               )}
 
-              {product.ingredients.length > 0 ? (
+              {product.servingSizeAlert && (
+                <View style={S.alertWarn}>
+                  <Text style={S.alertWarnText}>⚠ {product.servingSizeAlert}</Text>
+                </View>
+              )}
+
+              {/* Strength picker — shown when selected variant has multiple strengths */}
+              {currentVariant && currentVariant.strengths.length > 1 && (
+                <View style={S.strengthSection}>
+                  <Text style={S.strengthLabel}>Available OTC strengths:</Text>
+                  <View style={S.strengthList}>
+                    {currentVariant.strengths.map((s, i) => (
+                      <TouchableOpacity
+                        key={i}
+                        style={[
+                          S.strengthChip,
+                          i === selectedStrengthIdx && S.strengthChipActive,
+                        ]}
+                        onPress={() => setSelectedStrengthIdx(i)}
+                        activeOpacity={0.7}
+                      >
+                        <Text
+                          style={[
+                            S.strengthChipText,
+                            i === selectedStrengthIdx && S.strengthChipTextActive,
+                          ]}
+                        >
+                          {s.label}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </View>
+              )}
+
+              {displayedIngredients.length > 0 ? (
                 <View style={S.card}>
                   <View style={S.cardHeader}>
                     <Text style={S.cardHeaderLeft}>
@@ -406,12 +498,12 @@ export default function LookupScreen() {
                     </Text>
                     <Text style={S.cardHeaderRight}>Purpose</Text>
                   </View>
-                  {product.ingredients.map((ing, i) => (
+                  {displayedIngredients.map((ing, i) => (
                     <View
                       key={i}
                       style={[
                         S.ingrRow,
-                        i === product.ingredients.length - 1 && S.ingrRowLast,
+                        i === displayedIngredients.length - 1 && S.ingrRowLast,
                       ]}
                     >
                       <View style={S.ingrLeft}>
@@ -763,6 +855,51 @@ const S = StyleSheet.create({
     color: COLOR.textSub,
     textAlign: "right",
     maxWidth: 130,
+  },
+
+  strengthSection: {
+    marginBottom: 14,
+  },
+  strengthLabel: {
+    fontSize: FONT.xs,
+    fontWeight: "600",
+    color: COLOR.textMuted,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+    marginBottom: 8,
+  },
+  strengthList: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  strengthChip: {
+    borderWidth: 1.5,
+    borderColor: COLOR.border,
+    borderRadius: 20,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    backgroundColor: COLOR.white,
+  },
+  strengthChipActive: {
+    borderColor: COLOR.primaryMid,
+    backgroundColor: COLOR.primaryLight,
+  },
+  strengthChipText: {
+    fontSize: FONT.sm,
+    color: COLOR.textSub,
+    fontWeight: "500",
+  },
+  strengthChipTextActive: {
+    color: COLOR.primary,
+    fontWeight: "600",
+  },
+  strengthChipBTC: {
+    fontSize: FONT.xs,
+    color: COLOR.danger,
+    fontWeight: "700",
+  },
+  variantDesc: {
+    fontSize: FONT.xs,
+    color: COLOR.textMuted,
+    marginTop: 8,
+    fontStyle: "italic",
   },
 
   actionRow: {

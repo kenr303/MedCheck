@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useLocalSearchParams } from "expo-router";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -29,6 +30,8 @@ type SearchedProduct = {
   items: PriceItem[];
 };
 
+// Static fallback prices — used when the live worker is unreachable or offline.
+// Update these manually once or twice a year. Live prices come from the worker.
 const PRICE_DB: Record<string, SearchedProduct> = {
   acetaminophen: {
     genericName: "Acetaminophen",
@@ -1230,9 +1233,196 @@ const PRICE_DB: Record<string, SearchedProduct> = {
       },
     ],
   },
+  fexofenadine: {
+    genericName: "Fexofenadine HCl",
+    strength: "180 mg",
+    items: [
+      { name: "Equate Fexofenadine", store: "Walmart", count: "45 ct", price: 10.88, pricePerPill: 0.24, isGeneric: true, url: "https://www.walmart.com/search?q=equate+fexofenadine+180mg" },
+      { name: "Amazon Basic Care Fexofenadine", store: "Amazon", count: "45 ct", price: 11.99, pricePerPill: 0.27, isGeneric: true, url: "https://www.amazon.com/s?k=fexofenadine+180mg+45ct" },
+      { name: "CVS Health Fexofenadine", store: "CVS", count: "45 ct", price: 13.49, pricePerPill: 0.30, isGeneric: true, url: "https://www.cvs.com/search?searchTerm=fexofenadine+180mg" },
+      { name: "Walgreens Fexofenadine", store: "Walgreens", count: "45 ct", price: 14.99, pricePerPill: 0.33, isGeneric: true, url: "https://www.walgreens.com/search/results.jsp?Ntt=fexofenadine+180mg" },
+      { name: "Allegra Allergy", store: "Amazon", count: "45 ct", price: 22.97, pricePerPill: 0.51, isGeneric: false, url: "https://www.amazon.com/s?k=allegra+allergy+180mg+45ct" },
+    ],
+  },
+  bismuth: {
+    genericName: "Bismuth Subsalicylate",
+    strength: "262 mg",
+    items: [
+      { name: "Equate Bismuth Subsalicylate", store: "Walmart", count: "48 ct", price: 4.98, pricePerPill: 0.10, isGeneric: true, url: "https://www.walmart.com/search?q=equate+bismuth+subsalicylate+262mg" },
+      { name: "Amazon Basic Care Bismuth", store: "Amazon", count: "48 ct", price: 5.49, pricePerPill: 0.11, isGeneric: true, url: "https://www.amazon.com/s?k=bismuth+subsalicylate+262mg" },
+      { name: "CVS Health Bismuth", store: "CVS", count: "48 ct", price: 6.49, pricePerPill: 0.14, isGeneric: true, url: "https://www.cvs.com/search?searchTerm=bismuth+subsalicylate" },
+      { name: "Walgreens Bismuth", store: "Walgreens", count: "48 ct", price: 7.29, pricePerPill: 0.15, isGeneric: true, url: "https://www.walgreens.com/search/results.jsp?Ntt=bismuth+subsalicylate" },
+      { name: "Pepto-Bismol", store: "Walmart", count: "48 ct", price: 8.98, pricePerPill: 0.19, isGeneric: false, url: "https://www.walmart.com/search?q=pepto+bismol+tablets" },
+    ],
+  },
+  docusate: {
+    genericName: "Docusate Sodium",
+    strength: "100 mg",
+    items: [
+      { name: "Equate Docusate Sodium", store: "Walmart", count: "100 ct", price: 4.48, pricePerPill: 0.04, isGeneric: true, url: "https://www.walmart.com/search?q=equate+docusate+sodium+100mg" },
+      { name: "Amazon Basic Care Docusate", store: "Amazon", count: "100 ct", price: 5.29, pricePerPill: 0.05, isGeneric: true, url: "https://www.amazon.com/s?k=docusate+sodium+100mg+100ct" },
+      { name: "CVS Health Docusate", store: "CVS", count: "100 ct", price: 6.49, pricePerPill: 0.06, isGeneric: true, url: "https://www.cvs.com/search?searchTerm=docusate+sodium+100mg" },
+      { name: "Walgreens Docusate", store: "Walgreens", count: "100 ct", price: 7.29, pricePerPill: 0.07, isGeneric: true, url: "https://www.walgreens.com/search/results.jsp?Ntt=docusate+sodium+100mg" },
+      { name: "Colace", store: "Amazon", count: "100 ct", price: 11.97, pricePerPill: 0.12, isGeneric: false, url: "https://www.amazon.com/s?k=colace+100mg+100ct" },
+    ],
+  },
+  "polyethylene glycol": {
+    genericName: "Polyethylene Glycol 3350",
+    strength: "17 g dose",
+    items: [
+      { name: "Equate MiraLax", store: "Walmart", count: "30 doses", price: 14.88, pricePerPill: 0.50, isGeneric: true, url: "https://www.walmart.com/search?q=equate+polyethylene+glycol+3350" },
+      { name: "Amazon Basic Care PEG 3350", store: "Amazon", count: "30 doses", price: 15.49, pricePerPill: 0.52, isGeneric: true, url: "https://www.amazon.com/s?k=polyethylene+glycol+3350+powder" },
+      { name: "CVS Health PEG 3350", store: "CVS", count: "30 doses", price: 17.99, pricePerPill: 0.60, isGeneric: true, url: "https://www.cvs.com/search?searchTerm=polyethylene+glycol+3350" },
+      { name: "Walgreens PEG 3350", store: "Walgreens", count: "30 doses", price: 18.99, pricePerPill: 0.63, isGeneric: true, url: "https://www.walgreens.com/search/results.jsp?Ntt=polyethylene+glycol+3350" },
+      { name: "MiraLax", store: "Amazon", count: "30 doses", price: 22.97, pricePerPill: 0.77, isGeneric: false, url: "https://www.amazon.com/s?k=miralax+30+doses" },
+    ],
+  },
+  hydrocortisone: {
+    genericName: "Hydrocortisone",
+    strength: "1% Cream",
+    items: [
+      { name: "Equate Hydrocortisone Cream", store: "Walmart", count: "1 oz", price: 2.98, pricePerPill: 2.98, isGeneric: true, url: "https://www.walmart.com/search?q=equate+hydrocortisone+cream+1%" },
+      { name: "Amazon Basic Care Hydrocortisone", store: "Amazon", count: "1 oz", price: 3.49, pricePerPill: 3.49, isGeneric: true, url: "https://www.amazon.com/s?k=hydrocortisone+cream+1%25+1oz" },
+      { name: "CVS Health Hydrocortisone", store: "CVS", count: "1 oz", price: 4.49, pricePerPill: 4.49, isGeneric: true, url: "https://www.cvs.com/search?searchTerm=hydrocortisone+cream+1%" },
+      { name: "Walgreens Hydrocortisone", store: "Walgreens", count: "1 oz", price: 4.99, pricePerPill: 4.99, isGeneric: true, url: "https://www.walgreens.com/search/results.jsp?Ntt=hydrocortisone+cream+1%" },
+      { name: "Cortaid", store: "Amazon", count: "1 oz", price: 6.97, pricePerPill: 6.97, isGeneric: false, url: "https://www.amazon.com/s?k=cortaid+hydrocortisone+cream" },
+    ],
+  },
+  "vitamin c": {
+    genericName: "Vitamin C (Ascorbic Acid)",
+    strength: "500 mg",
+    items: [
+      { name: "Equate Vitamin C", store: "Walmart", count: "100 ct", price: 3.88, pricePerPill: 0.04, isGeneric: true, url: "https://www.walmart.com/search?q=equate+vitamin+c+500mg" },
+      { name: "Amazon Basic Care Vitamin C", store: "Amazon", count: "100 ct", price: 4.49, pricePerPill: 0.04, isGeneric: true, url: "https://www.amazon.com/s?k=vitamin+c+500mg+100ct" },
+      { name: "CVS Health Vitamin C", store: "CVS", count: "100 ct", price: 5.99, pricePerPill: 0.06, isGeneric: true, url: "https://www.cvs.com/search?searchTerm=vitamin+c+500mg" },
+      { name: "Walgreens Vitamin C", store: "Walgreens", count: "100 ct", price: 6.49, pricePerPill: 0.06, isGeneric: true, url: "https://www.walgreens.com/search/results.jsp?Ntt=vitamin+c+500mg" },
+    ],
+  },
+  magnesium: {
+    genericName: "Magnesium Oxide",
+    strength: "400 mg",
+    items: [
+      { name: "Equate Magnesium", store: "Walmart", count: "100 ct", price: 3.98, pricePerPill: 0.04, isGeneric: true, url: "https://www.walmart.com/search?q=equate+magnesium+400mg" },
+      { name: "Amazon Basic Care Magnesium", store: "Amazon", count: "100 ct", price: 4.49, pricePerPill: 0.04, isGeneric: true, url: "https://www.amazon.com/s?k=magnesium+oxide+400mg+100ct" },
+      { name: "CVS Health Magnesium", store: "CVS", count: "100 ct", price: 5.99, pricePerPill: 0.06, isGeneric: true, url: "https://www.cvs.com/search?searchTerm=magnesium+400mg" },
+      { name: "Walgreens Magnesium", store: "Walgreens", count: "100 ct", price: 6.49, pricePerPill: 0.06, isGeneric: true, url: "https://www.walgreens.com/search/results.jsp?Ntt=magnesium+400mg" },
+    ],
+  },
+  zinc: {
+    genericName: "Zinc Gluconate",
+    strength: "50 mg",
+    items: [
+      { name: "Equate Zinc", store: "Walmart", count: "100 ct", price: 3.48, pricePerPill: 0.03, isGeneric: true, url: "https://www.walmart.com/search?q=equate+zinc+50mg" },
+      { name: "Amazon Basic Care Zinc", store: "Amazon", count: "100 ct", price: 3.99, pricePerPill: 0.04, isGeneric: true, url: "https://www.amazon.com/s?k=zinc+gluconate+50mg+100ct" },
+      { name: "CVS Health Zinc", store: "CVS", count: "100 ct", price: 5.49, pricePerPill: 0.05, isGeneric: true, url: "https://www.cvs.com/search?searchTerm=zinc+50mg" },
+      { name: "Walgreens Zinc", store: "Walgreens", count: "100 ct", price: 5.99, pricePerPill: 0.06, isGeneric: true, url: "https://www.walgreens.com/search/results.jsp?Ntt=zinc+50mg" },
+    ],
+  },
+  "vitamin b12": {
+    genericName: "Vitamin B12 (Cyanocobalamin)",
+    strength: "1000 mcg",
+    items: [
+      { name: "Equate Vitamin B12", store: "Walmart", count: "100 ct", price: 5.98, pricePerPill: 0.06, isGeneric: true, url: "https://www.walmart.com/search?q=equate+vitamin+b12+1000mcg" },
+      { name: "Amazon Basic Care B12", store: "Amazon", count: "100 ct", price: 6.49, pricePerPill: 0.06, isGeneric: true, url: "https://www.amazon.com/s?k=vitamin+b12+1000mcg+100ct" },
+      { name: "CVS Health Vitamin B12", store: "CVS", count: "100 ct", price: 7.99, pricePerPill: 0.08, isGeneric: true, url: "https://www.cvs.com/search?searchTerm=vitamin+b12+1000mcg" },
+      { name: "Walgreens Vitamin B12", store: "Walgreens", count: "100 ct", price: 8.99, pricePerPill: 0.09, isGeneric: true, url: "https://www.walgreens.com/search/results.jsp?Ntt=vitamin+b12+1000mcg" },
+    ],
+  },
+  turmeric: {
+    genericName: "Turmeric / Curcumin",
+    strength: "500 mg",
+    items: [
+      { name: "Equate Turmeric Curcumin", store: "Walmart", count: "60 ct", price: 7.98, pricePerPill: 0.13, isGeneric: true, url: "https://www.walmart.com/search?q=equate+turmeric+curcumin" },
+      { name: "Amazon Basic Care Turmeric", store: "Amazon", count: "60 ct", price: 8.99, pricePerPill: 0.15, isGeneric: true, url: "https://www.amazon.com/s?k=turmeric+curcumin+500mg+60ct" },
+      { name: "CVS Health Turmeric", store: "CVS", count: "60 ct", price: 10.99, pricePerPill: 0.18, isGeneric: true, url: "https://www.cvs.com/search?searchTerm=turmeric+curcumin+500mg" },
+      { name: "Walgreens Turmeric", store: "Walgreens", count: "60 ct", price: 11.99, pricePerPill: 0.20, isGeneric: true, url: "https://www.walgreens.com/search/results.jsp?Ntt=turmeric+curcumin" },
+      { name: "Qunol Turmeric", store: "Amazon", count: "60 ct", price: 19.97, pricePerPill: 0.33, isGeneric: false, url: "https://www.amazon.com/s?k=qunol+turmeric+500mg" },
+    ],
+  },
+  elderberry: {
+    genericName: "Elderberry (Sambucus)",
+    strength: "500 mg",
+    items: [
+      { name: "Equate Elderberry", store: "Walmart", count: "60 ct", price: 8.98, pricePerPill: 0.15, isGeneric: true, url: "https://www.walmart.com/search?q=equate+elderberry+500mg" },
+      { name: "Amazon Basic Care Elderberry", store: "Amazon", count: "60 ct", price: 9.99, pricePerPill: 0.17, isGeneric: true, url: "https://www.amazon.com/s?k=elderberry+500mg+60ct" },
+      { name: "CVS Health Elderberry", store: "CVS", count: "60 ct", price: 12.99, pricePerPill: 0.22, isGeneric: true, url: "https://www.cvs.com/search?searchTerm=elderberry+500mg" },
+      { name: "Walgreens Elderberry", store: "Walgreens", count: "60 ct", price: 13.99, pricePerPill: 0.23, isGeneric: true, url: "https://www.walgreens.com/search/results.jsp?Ntt=elderberry+500mg" },
+      { name: "Nature's Bounty Elderberry", store: "Amazon", count: "60 ct", price: 16.97, pricePerPill: 0.28, isGeneric: false, url: "https://www.amazon.com/s?k=natures+bounty+elderberry" },
+    ],
+  },
+  biotin: {
+    genericName: "Biotin (Vitamin B7)",
+    strength: "5000 mcg",
+    items: [
+      { name: "Equate Biotin", store: "Walmart", count: "120 ct", price: 6.98, pricePerPill: 0.06, isGeneric: true, url: "https://www.walmart.com/search?q=equate+biotin+5000mcg" },
+      { name: "Amazon Basic Care Biotin", store: "Amazon", count: "120 ct", price: 7.49, pricePerPill: 0.06, isGeneric: true, url: "https://www.amazon.com/s?k=biotin+5000mcg+120ct" },
+      { name: "CVS Health Biotin", store: "CVS", count: "120 ct", price: 9.99, pricePerPill: 0.08, isGeneric: true, url: "https://www.cvs.com/search?searchTerm=biotin+5000mcg" },
+      { name: "Walgreens Biotin", store: "Walgreens", count: "120 ct", price: 10.99, pricePerPill: 0.09, isGeneric: true, url: "https://www.walgreens.com/search/results.jsp?Ntt=biotin+5000mcg" },
+    ],
+  },
+  glucosamine: {
+    genericName: "Glucosamine Sulfate",
+    strength: "1500 mg",
+    items: [
+      { name: "Equate Glucosamine", store: "Walmart", count: "90 ct", price: 14.88, pricePerPill: 0.17, isGeneric: true, url: "https://www.walmart.com/search?q=equate+glucosamine+1500mg" },
+      { name: "Amazon Basic Care Glucosamine", store: "Amazon", count: "90 ct", price: 16.49, pricePerPill: 0.18, isGeneric: true, url: "https://www.amazon.com/s?k=glucosamine+sulfate+1500mg+90ct" },
+      { name: "CVS Health Glucosamine", store: "CVS", count: "90 ct", price: 19.99, pricePerPill: 0.22, isGeneric: true, url: "https://www.cvs.com/search?searchTerm=glucosamine+1500mg" },
+      { name: "Walgreens Glucosamine", store: "Walgreens", count: "90 ct", price: 21.99, pricePerPill: 0.24, isGeneric: true, url: "https://www.walgreens.com/search/results.jsp?Ntt=glucosamine+1500mg" },
+      { name: "Move Free", store: "Amazon", count: "90 ct", price: 28.97, pricePerPill: 0.32, isGeneric: false, url: "https://www.amazon.com/s?k=move+free+glucosamine" },
+    ],
+  },
+  coq10: {
+    genericName: "Coenzyme Q10 (CoQ10)",
+    strength: "100 mg",
+    items: [
+      { name: "Equate CoQ10", store: "Walmart", count: "60 ct", price: 11.88, pricePerPill: 0.20, isGeneric: true, url: "https://www.walmart.com/search?q=equate+coq10+100mg" },
+      { name: "Amazon Basic Care CoQ10", store: "Amazon", count: "60 ct", price: 12.99, pricePerPill: 0.22, isGeneric: true, url: "https://www.amazon.com/s?k=coq10+100mg+60ct" },
+      { name: "CVS Health CoQ10", store: "CVS", count: "60 ct", price: 15.99, pricePerPill: 0.27, isGeneric: true, url: "https://www.cvs.com/search?searchTerm=coq10+100mg" },
+      { name: "Walgreens CoQ10", store: "Walgreens", count: "60 ct", price: 17.99, pricePerPill: 0.30, isGeneric: true, url: "https://www.walgreens.com/search/results.jsp?Ntt=coq10+100mg" },
+      { name: "Qunol CoQ10", store: "Amazon", count: "60 ct", price: 24.97, pricePerPill: 0.42, isGeneric: false, url: "https://www.amazon.com/s?k=qunol+coq10+100mg" },
+    ],
+  },
+  probiotics: {
+    genericName: "Probiotics",
+    strength: "10 Billion CFU",
+    items: [
+      { name: "Equate Probiotic", store: "Walmart", count: "30 ct", price: 9.98, pricePerPill: 0.33, isGeneric: true, url: "https://www.walmart.com/search?q=equate+probiotic+10+billion" },
+      { name: "Amazon Basic Care Probiotic", store: "Amazon", count: "30 ct", price: 10.99, pricePerPill: 0.37, isGeneric: true, url: "https://www.amazon.com/s?k=probiotic+10+billion+cfu+30ct" },
+      { name: "CVS Health Probiotic", store: "CVS", count: "30 ct", price: 13.99, pricePerPill: 0.47, isGeneric: true, url: "https://www.cvs.com/search?searchTerm=probiotic+10+billion" },
+      { name: "Walgreens Probiotic", store: "Walgreens", count: "30 ct", price: 14.99, pricePerPill: 0.50, isGeneric: true, url: "https://www.walgreens.com/search/results.jsp?Ntt=probiotic+10+billion" },
+      { name: "Culturelle Probiotic", store: "Amazon", count: "30 ct", price: 23.97, pricePerPill: 0.80, isGeneric: false, url: "https://www.amazon.com/s?k=culturelle+probiotic+30ct" },
+    ],
+  },
 };
 
-const PRICE_DATA_UPDATED = "January 2025";
+// ── Live pricing via Cloudflare Worker ────────────────────────────────────
+// Deploy price-worker/ to get a URL, then set it here.
+// Falls back to static PRICE_DB if the worker is unreachable.
+const PRICE_WORKER_URL = "https://medcheck-price-worker.donvenecio.workers.dev";
+
+type WorkerResponse = {
+  updatedAt: string;
+  isEstimate: boolean;
+  disclaimer: string;
+  data: SearchedProduct | null;
+};
+
+async function fetchLivePrices(
+  drugKey: string,
+): Promise<{ data: SearchedProduct; updatedAt: string; isEstimate: boolean; disclaimer: string } | null> {
+  try {
+    const res = await fetch(`${PRICE_WORKER_URL}/prices?drug=${encodeURIComponent(drugKey)}`, {
+      signal: AbortSignal.timeout(6000),
+    });
+    if (!res.ok) return null;
+    const body: WorkerResponse = await res.json();
+    if (!body.data) return null;
+    return { data: body.data, updatedAt: body.updatedAt, isEstimate: body.isEstimate, disclaimer: body.disclaimer };
+  } catch {
+    return null;
+  }
+}
+// ──────────────────────────────────────────────────────────────────────────
 
 const ALIASES: Record<string, string> = {
   tylenol: "acetaminophen",
@@ -1253,50 +1443,120 @@ const ALIASES: Record<string, string> = {
   "vitamin d3": "vitamin d",
   omega3: "fish oil",
   omega: "fish oil",
+  allegra: "fexofenadine",
+  "pepto bismol": "bismuth",
+  "pepto-bismol": "bismuth",
+  pepto: "bismuth",
+  colace: "docusate",
+  miralax: "polyethylene glycol",
+  peg: "polyethylene glycol",
+  laxative: "polyethylene glycol",
+  cortaid: "hydrocortisone",
+  "vitamin c": "vitamin c",
+  "ascorbic acid": "vitamin c",
+  b12: "vitamin b12",
+  cyanocobalamin: "vitamin b12",
+  curcumin: "turmeric",
+  sambucus: "elderberry",
+  "coenzyme q10": "coq10",
+  "coq-10": "coq10",
+  probiotic: "probiotics",
+  culturelle: "probiotics",
 };
+
+function formatUpdatedAt(iso: string): string {
+  try {
+    return new Date(iso).toLocaleDateString("en-US", {
+      month: "long",
+      day: "numeric",
+      year: "numeric",
+    });
+  } catch {
+    return iso;
+  }
+}
 
 export default function PricesScreen() {
   const { currentProduct } = useMedStore();
+  const params = useLocalSearchParams<{ drug?: string }>();
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<SearchedProduct | null>(null);
+  const [updatedAt, setUpdatedAt] = useState<string | null>(null);
+  const [isEstimate, setIsEstimate] = useState(false);
+  const [disclaimer, setDisclaimer] = useState<string | null>(null);
+  // Track last searched key so we don't re-run on unrelated re-renders
+  const lastSearchedKey = useRef<string>("");
 
-  useEffect(() => {
-    if (currentProduct?.genericKey) {
-      const key = currentProduct.genericKey;
-      const found = PRICE_DB[key] || PRICE_DB[ALIASES[key]];
-      if (found) {
-        setQuery(currentProduct.brandName);
-        setResult({
-          ...found,
-          items: [...found.items].sort((a, b) => a.price - b.price),
-        });
-      }
+  const applyResult = (found: SearchedProduct, meta?: { updatedAt: string; isEstimate: boolean; disclaimer: string }) => {
+    setResult({ ...found, items: [...found.items].sort((a, b) => a.price - b.price) });
+    if (meta) {
+      setUpdatedAt(formatUpdatedAt(meta.updatedAt));
+      setIsEstimate(meta.isEstimate);
+      setDisclaimer(meta.disclaimer);
+    } else {
+      setUpdatedAt(null);
+      setIsEstimate(false);
+      setDisclaimer(null);
     }
-  }, [currentProduct]);
+  };
 
-  const searchPrices = () => {
+  const runSearch = useCallback((rawKey: string, displayName: string) => {
+    const resolvedKey = ALIASES[rawKey] || rawKey;
+    if (lastSearchedKey.current === resolvedKey) return;
+    lastSearchedKey.current = resolvedKey;
+    setQuery(displayName);
+    setLoading(true);
+    setResult(null);
+    fetchLivePrices(resolvedKey).then((live) => {
+      if (live) {
+        applyResult(live.data, live);
+      } else {
+        const found = PRICE_DB[resolvedKey];
+        if (found) applyResult(found);
+      }
+      setLoading(false);
+    });
+  }, []);
+
+  // ?drug= param takes priority (navigated from lookup with a specific strength key)
+  useEffect(() => {
+    const drugParam = params.drug;
+    if (drugParam) {
+      runSearch(drugParam, drugParam);
+      return;
+    }
+    // Fall back to currentProduct from store (e.g. navigated via tab)
+    if (currentProduct?.priceKey) {
+      runSearch(currentProduct.priceKey, currentProduct.brandName);
+    } else if (currentProduct?.genericKey) {
+      runSearch(currentProduct.genericKey, currentProduct.brandName);
+    }
+  }, [params.drug, currentProduct, runSearch]);
+
+  const searchPrices = async () => {
     if (!query.trim()) return;
     setLoading(true);
     setResult(null);
-    setTimeout(() => {
-      const key = query.trim().toLowerCase();
-      const resolvedKey = ALIASES[key] || key;
-      const found = PRICE_DB[resolvedKey];
-      if (!found) {
-        Alert.alert(
-          "Not found",
-          "Prices not available yet for this product.\n\nAvailable drugs: acetaminophen, ibuprofen, naproxen, aspirin, loratadine, cetirizine, diphenhydramine, omeprazole, famotidine, loperamide, simethicone, guaifenesin, dextromethorphan\n\nSupplements: melatonin, calcium, vitamin d, fish oil",
-        );
-        setLoading(false);
-        return;
-      }
-      setResult({
-        ...found,
-        items: [...found.items].sort((a, b) => a.price - b.price),
-      });
+    const key = query.trim().toLowerCase();
+    const resolvedKey = ALIASES[key] || key;
+    const live = await fetchLivePrices(resolvedKey);
+    if (live) {
+      applyResult(live.data, live);
       setLoading(false);
-    }, 500);
+      return;
+    }
+    const found = PRICE_DB[resolvedKey];
+    if (!found) {
+      Alert.alert(
+        "Not found",
+        "Prices not available for this product. Try: acetaminophen, ibuprofen, aspirin, naproxen, loratadine, cetirizine, fexofenadine, diphenhydramine, omeprazole, famotidine, loperamide, bismuth, docusate, MiraLax, hydrocortisone, melatonin, calcium, vitamin D, vitamin C, magnesium, zinc, vitamin B12, fish oil, turmeric, elderberry, biotin, glucosamine, CoQ10, probiotics",
+      );
+      setLoading(false);
+      return;
+    }
+    applyResult(found);
+    setLoading(false);
   };
 
   const openLink = (url: string) => {
@@ -1320,25 +1580,42 @@ export default function PricesScreen() {
     <ScrollView style={S.container} keyboardShouldPersistTaps="handled">
       <View style={S.inner}>
         <View style={S.searchRow}>
-          <TextInput
-            style={S.input}
-            placeholder="Drug or supplement name..."
-            placeholderTextColor={COLOR.textMuted}
-            value={query}
-            onChangeText={setQuery}
-            onSubmitEditing={searchPrices}
-            returnKeyType="search"
-            autoCorrect={false}
-            autoCapitalize="none"
-          />
+          <View style={S.inputWrap}>
+            <TextInput
+              style={S.input}
+              placeholder="Drug or supplement name..."
+              placeholderTextColor={COLOR.textMuted}
+              value={query}
+              onChangeText={setQuery}
+              onSubmitEditing={searchPrices}
+              returnKeyType="search"
+              autoCorrect={false}
+              autoCapitalize="none"
+            />
+            {query.length > 0 && (
+              <TouchableOpacity
+                style={S.clearBtn}
+                onPress={() => {
+                  setQuery("");
+                  setResult(null);
+                  setUpdatedAt(null);
+                  setIsEstimate(false);
+                  setDisclaimer(null);
+                }}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <Text style={S.clearBtnText}>✕</Text>
+              </TouchableOpacity>
+            )}
+          </View>
           <TouchableOpacity style={S.searchBtn} onPress={searchPrices}>
             <Text style={S.searchBtnText}>Search</Text>
           </TouchableOpacity>
         </View>
 
         <Text style={S.hint}>
-          Try: Tylenol, ibuprofen, Claritin, aspirin, Mucinex, melatonin,
-          calcium...
+          Try: Tylenol, ibuprofen, Claritin, Allegra, Pepto-Bismol, MiraLax,
+          melatonin, vitamin C, magnesium, zinc, turmeric, CoQ10...
         </Text>
 
         {loading && (
@@ -1352,9 +1629,12 @@ export default function PricesScreen() {
           <View>
             <Text style={S.productName}>{result.genericName}</Text>
             <Text style={S.productStrength}>
-              {result.strength} · sorted by lowest price · prices as of{" "}
-              {PRICE_DATA_UPDATED}
+              {result.strength} · sorted by lowest price
+              {updatedAt ? ` · updated ${updatedAt}` : ""}
             </Text>
+            {isEstimate && disclaimer && (
+              <Text style={S.estimateNote}>⚠ {disclaimer}</Text>
+            )}
 
             {/* Local pharmacy slot */}
             <TouchableOpacity
@@ -1450,13 +1730,21 @@ const S = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLOR.bg },
   inner: { padding: SPACE.md },
   searchRow: { flexDirection: "row", gap: SPACE.sm, marginBottom: SPACE.sm },
+  inputWrap: { flex: 1, position: "relative", justifyContent: "center" },
+  clearBtn: {
+    position: "absolute",
+    right: 10,
+    padding: 4,
+  },
+  clearBtnText: { fontSize: 14, color: COLOR.textMuted },
   input: {
     flex: 1,
     backgroundColor: COLOR.white,
     borderRadius: RADIUS.sm,
     borderWidth: 1.5,
     borderColor: "#ccc",
-    paddingHorizontal: 16,
+    paddingLeft: 16,
+    paddingRight: 36,
     paddingVertical: 14,
     fontSize: FONT.md,
     color: COLOR.text,
@@ -1573,6 +1861,12 @@ const S = StyleSheet.create({
     fontSize: FONT.xxl + 4,
     fontWeight: "600",
     color: COLOR.primary,
+  },
+  estimateNote: {
+    fontSize: FONT.xs,
+    color: COLOR.warning,
+    lineHeight: 18,
+    marginBottom: 12,
   },
   partnerCTA: { marginTop: 14, padding: 14, alignItems: "center" },
   partnerCTAText: {

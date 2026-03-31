@@ -1,3 +1,4 @@
+import { findOTCFamily } from "./otcDatabase";
 import { lookupSupplement } from "./supplementData";
 import { Ingredient, MedProduct } from "./useMedStore";
 
@@ -34,66 +35,84 @@ export function parseIngredients(r: any): Ingredient[] {
   });
 }
 
+function scoreFDAResult(r: any, query: string): number {
+  const q = query.toLowerCase();
+  let score = 0;
+  const brand = (r.openfda?.brand_name?.[0] || "").toLowerCase();
+  const generic = (r.openfda?.generic_name?.[0] || "").toLowerCase();
+  const substance = (r.openfda?.substance_name?.[0] || "").toLowerCase();
+  if (brand === q || generic === q || substance === q) score += 10;
+  else if (brand.startsWith(q) || generic.startsWith(q) || substance.startsWith(q)) score += 6;
+  else if (brand.includes(q) || generic.includes(q) || substance.includes(q)) score += 3;
+  const ingredients = parseIngredients(r);
+  if (ingredients.length > 0) score += 4;
+  const otcText = JSON.stringify(r.openfda || "").toLowerCase();
+  if (otcText.includes("otc") || (r.product_type || "").toLowerCase().includes("otc")) score += 1;
+  return score;
+}
+
+function buildProduct(r: any, query: string): MedProduct {
+  const brandName =
+    r.openfda?.brand_name?.[0] ||
+    r.brand_name?.[0] ||
+    r.openfda?.generic_name?.[0] ||
+    query;
+  const manufacturer =
+    r.openfda?.manufacturer_name?.[0] || r.manufacturer_name?.[0] || "";
+  const form = (r.dosage_form?.[0] || "").toLowerCase();
+  const servingSizeRaw = (r.dosage_and_administration?.[0] || "").toLowerCase();
+  const servingSizeAlert =
+    servingSizeRaw.includes("2 tablet") ||
+    servingSizeRaw.includes("2 capsule") ||
+    servingSizeRaw.includes("two tablet") ||
+    servingSizeRaw.includes("two capsule")
+      ? "Dose requires 2 units — not 1. Check the label carefully."
+      : null;
+  const allText = JSON.stringify(r).toLowerCase();
+  const isBTC =
+    allText.includes("pseudoephedrine") || allText.includes("ephedrine");
+  const genericKey = (r.openfda?.generic_name?.[0] || "")
+    .toLowerCase()
+    .split(" ")[0];
+  return {
+    brandName,
+    manufacturer,
+    form,
+    ingredients: parseIngredients(r),
+    servingSizeAlert,
+    isBTC,
+    genericKey,
+  };
+}
+
 export async function lookupFDA(
   query: string,
 ): Promise<{ product: MedProduct; raw: any } | null> {
   const q = encodeURIComponent(query.trim());
   const urls = [
-    `https://api.fda.gov/drug/label.json?search=openfda.brand_name:${q}&limit=1`,
-    `https://api.fda.gov/drug/label.json?search=openfda.generic_name:${q}&limit=1`,
-    `https://api.fda.gov/drug/label.json?search=openfda.substance_name:${q}&limit=1`,
-    `https://api.fda.gov/drug/label.json?search=${q}&limit=1`,
+    `https://api.fda.gov/drug/label.json?search=openfda.brand_name:${q}&limit=5`,
+    `https://api.fda.gov/drug/label.json?search=openfda.generic_name:${q}&limit=5`,
+    `https://api.fda.gov/drug/label.json?search=openfda.substance_name:${q}&limit=5`,
+    `https://api.fda.gov/drug/label.json?search=${q}&limit=5`,
   ];
+  const candidates: Array<{ r: any; score: number }> = [];
   for (const url of urls) {
     try {
       const res = await fetch(url);
       const data = await res.json();
-      if (data.results?.length > 0) {
-        const r = data.results[0];
-        const ingredients = parseIngredients(r);
-        if (ingredients.length === 0) continue;
-        const brandName =
-          r.openfda?.brand_name?.[0] ||
-          r.brand_name?.[0] ||
-          r.openfda?.generic_name?.[0] ||
-          query;
-        const manufacturer =
-          r.openfda?.manufacturer_name?.[0] || r.manufacturer_name?.[0] || "";
-        const form = (r.dosage_form?.[0] || "").toLowerCase();
-        const servingSizeRaw = (
-          r.dosage_and_administration?.[0] || ""
-        ).toLowerCase();
-        const servingSizeAlert =
-          servingSizeRaw.includes("2 tablet") ||
-          servingSizeRaw.includes("2 capsule") ||
-          servingSizeRaw.includes("two tablet") ||
-          servingSizeRaw.includes("two capsule")
-            ? "Dose requires 2 units — not 1. Check the label carefully."
-            : null;
-        const allText = JSON.stringify(r).toLowerCase();
-        const isBTC =
-          allText.includes("pseudoephedrine") || allText.includes("ephedrine");
-        const genericKey = (r.openfda?.generic_name?.[0] || "")
-          .toLowerCase()
-          .split(" ")[0];
-        return {
-          product: {
-            brandName,
-            manufacturer,
-            form,
-            ingredients,
-            servingSizeAlert,
-            isBTC,
-            genericKey,
-          },
-          raw: r,
-        };
+      if (!data.results?.length) continue;
+      for (const r of data.results) {
+        if (parseIngredients(r).length === 0) continue;
+        candidates.push({ r, score: scoreFDAResult(r, query.trim()) });
       }
     } catch {
       continue;
     }
   }
-  return null;
+  if (candidates.length === 0) return null;
+  candidates.sort((a, b) => b.score - a.score);
+  const best = candidates[0].r;
+  return { product: buildProduct(best, query.trim()), raw: best };
 }
 
 export async function lookupDSLD(query: string): Promise<MedProduct | null> {
@@ -142,22 +161,48 @@ export async function lookupDSLD(query: string): Promise<MedProduct | null> {
 }
 
 export async function lookupByUPC(upc: string): Promise<MedProduct | null> {
+  // Helper: given a product title from a UPC database, try OTC → FDA → DSLD
+  async function resolveByName(name: string): Promise<MedProduct | null> {
+    const otc = lookupOTC(name);
+    if (otc) return otc;
+    const keyword = extractDrugKeyword(name);
+    if (keyword !== name) {
+      const otcKw = lookupOTC(keyword);
+      if (otcKw) return otcKw;
+    }
+    const fdaResult = await lookupFDA(name);
+    if (fdaResult) return fdaResult.product;
+    if (keyword !== name) {
+      const fdaKw = await lookupFDA(keyword);
+      if (fdaKw) return fdaKw.product;
+    }
+    return await lookupDSLD(name);
+  }
+
+  // 1. FDA by UPC / NDC
   const fdaUrls = [
-    `https://api.fda.gov/drug/label.json?search=openfda.upc:${upc}&limit=1`,
-    `https://api.fda.gov/drug/label.json?search=openfda.package_ndc:${upc}&limit=1`,
+    `https://api.fda.gov/drug/label.json?search=openfda.upc:${upc}&limit=5`,
+    `https://api.fda.gov/drug/label.json?search=openfda.package_ndc:${upc}&limit=5`,
   ];
   for (const url of fdaUrls) {
     try {
       const res = await fetch(url);
       const data = await res.json();
       if (data.results?.length > 0) {
-        const r = await lookupFDA(upc);
-        return r?.product || null;
+        const r = data.results[0];
+        const genericName = r.openfda?.generic_name?.[0] || "";
+        if (genericName) {
+          const otc = lookupOTC(genericName);
+          if (otc) return otc;
+        }
+        return buildProduct(r, genericName || upc);
       }
     } catch {
       continue;
     }
   }
+
+  // 2. Open Food Facts
   try {
     const res = await fetch(
       `https://world.openfoodfacts.org/api/v0/product/${upc}.json`,
@@ -166,27 +211,50 @@ export async function lookupByUPC(upc: string): Promise<MedProduct | null> {
     if (data.status === 1 && data.product) {
       const name = data.product.product_name || data.product.generic_name || "";
       if (name) {
-        const fdaResult = await lookupFDA(name);
-        if (fdaResult) return fdaResult.product;
-        return await lookupDSLD(name);
+        const result = await resolveByName(name);
+        if (result) return result;
       }
     }
   } catch {}
+
+  // 3. UPCItemDB
   try {
     const res = await fetch(
       `https://api.upcitemdb.com/prod/trial/lookup?upc=${upc}`,
     );
     const data = await res.json();
     if (data.items?.length > 0) {
-      const name = data.items[0].title || "";
-      if (name) {
-        const fdaResult = await lookupFDA(name);
-        if (fdaResult) return fdaResult.product;
-        return await lookupDSLD(name);
+      const title = data.items[0].title || "";
+      if (title) {
+        const result = await resolveByName(title);
+        if (result) return result;
       }
     }
   } catch {}
+
   return null;
+}
+
+// Extract the most likely drug name keyword from a product title.
+// e.g. "Equate Extra Strength Acetaminophen 500mg Tablets 100ct" → "Acetaminophen"
+function extractDrugKeyword(title: string): string {
+  const SKIP = new Set([
+    "extra", "strength", "regular", "maximum", "original", "formula",
+    "tablets", "tablet", "capsules", "capsule", "caplets", "caplet",
+    "softgels", "softgel", "gummies", "gummy", "liquid", "gel", "cream",
+    "count", "ct", "mg", "mcg", "pack", "value", "size", "plus", "and",
+    "with", "for", "the", "of", "non", "drowsy", "coated", "enteric",
+    "equate", "cvs", "walgreens", "walmart", "amazon", "basic", "care",
+    "brand", "generic", "health", "store",
+  ]);
+  const words = title.split(/[\s,/]+/);
+  for (const word of words) {
+    const clean = word.replace(/[^a-zA-Z]/g, "").toLowerCase();
+    if (clean.length >= 4 && !SKIP.has(clean) && !/^\d+$/.test(clean)) {
+      return clean;
+    }
+  }
+  return title;
 }
 
 const SUPPLEMENT_KEYWORDS = [
@@ -221,12 +289,42 @@ export function looksLikeSupplement(query: string): boolean {
   return SUPPLEMENT_KEYWORDS.some((k) => q.includes(k));
 }
 
+/**
+ * Primary lookup for common OTC drugs. Uses the curated OTC family database.
+ * Returns the canonical product with the full family attached for UI variant selection.
+ */
+export function lookupOTC(query: string): MedProduct | null {
+  const match = findOTCFamily(query);
+  if (!match) return null;
+  const { family } = match;
+  const defaultVariant = family.variants[family.defaultVariantIndex] ?? family.variants[0];
+  const defaultStrength = defaultVariant.strengths[defaultVariant.defaultStrengthIndex] ?? defaultVariant.strengths[0];
+  return {
+    brandName: family.familyName,
+    manufacturer: "",
+    form: defaultVariant.form ?? "",
+    ingredients: defaultStrength.ingredients,
+    servingSizeAlert: null,
+    isBTC: defaultVariant.isBTC ?? false,
+    genericKey: match.key,
+    otcFamily: family,
+    priceKey: defaultStrength.priceKey || match.key,
+    otcNote: defaultVariant.note,
+  };
+}
+
 export async function lookupProduct(query: string): Promise<{
   product: MedProduct;
   raw: any;
   source: "drug" | "supplement";
 } | null> {
   const q = query.trim();
+
+  // 1. Check curated OTC database first — most accurate for common drugs
+  const otcProduct = lookupOTC(q);
+  if (otcProduct) return { product: otcProduct, raw: null, source: "drug" };
+
+  // 2. Check local supplement database
   if (looksLikeSupplement(q)) {
     const local = lookupSupplement(q);
     if (local) return { product: local, raw: null, source: "supplement" };
