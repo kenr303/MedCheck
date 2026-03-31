@@ -62,39 +62,80 @@ type NADACRow = {
 };
 
 // ── NADAC fetch ────────────────────────────────────────────────────────────
+// CMS NADAC dataset — updated weekly, free, no API key.
+// Uses $q (full-text search) which is case-insensitive and more forgiving
+// than $where LIKE with upper().
+
+// CMS migrated from Socrata to DKAN. New dataset IDs per year.
+// Try current year first, fall back to previous year.
+const NADAC_DATASETS = [
+  "fbb83258-11c7-47f5-8b18-5f8e79f7e704", // 2026
+  "f38d0706-1239-442c-a3cc-40ef1b686ac0", // 2025
+];
+const NADAC_BASE = "https://data.medicaid.gov/api/1/datastore/query";
+
+type DKANResponse = {
+  results: NADACRow[];
+  count: number;
+};
 
 async function fetchNADACPerUnit(
   drug: DrugDefinition,
 ): Promise<number | null> {
-  const url = new URL("https://data.cms.gov/resource/tau9-gfwr.json");
-  url.searchParams.set(
-    "$where",
-    `upper(ndc_description) like upper('%${drug.nadacSearch}%') AND classification_for_rate_setting='G'`,
-  );
-  url.searchParams.set("$limit", "5");
-  url.searchParams.set("$order", "as_of_date DESC");
+  for (const datasetId of NADAC_DATASETS) {
+    try {
+      const body = {
+        conditions: [
+          {
+            property: "ndc_description",
+            value: `%${drug.nadacSearch}%`,
+            operator: "LIKE",
+          },
+        ],
+        limit: 10,
+        sort: [{ property: "as_of_date", order: "desc" }],
+      };
 
-  try {
-    const res = await fetch(url.toString(), {
-      headers: { Accept: "application/json" },
-      // 8-second timeout via signal
-      signal: AbortSignal.timeout(8000),
-    });
-    if (!res.ok) return null;
+      const res = await fetch(`${NADAC_BASE}/${datasetId}/0`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json",
+        },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(12000),
+      });
 
-    const rows: NADACRow[] = await res.json();
-    if (!rows.length) return null;
+      if (!res.ok) {
+        console.warn(`NADAC ${datasetId} → HTTP ${res.status} for ${drug.key}`);
+        continue;
+      }
 
-    // Average the top results to smooth out outliers
-    const costs = rows
-      .map((r) => parseFloat(r.nadac_per_unit))
-      .filter((n) => !isNaN(n) && n > 0);
-    if (!costs.length) return null;
+      const json: DKANResponse = await res.json();
+      const rows = json.results ?? [];
+      if (!rows.length) {
+        console.warn(`NADAC ${datasetId} → no rows for ${drug.key}`);
+        continue;
+      }
 
-    return costs.reduce((a, b) => a + b, 0) / costs.length;
-  } catch {
-    return null;
+      const genericRows = rows.filter(
+        (r) => r.classification_for_rate_setting === "G",
+      );
+      const source = genericRows.length > 0 ? genericRows : rows;
+      const costs = source
+        .map((r) => parseFloat(r.nadac_per_unit))
+        .filter((n) => !isNaN(n) && n > 0);
+      if (!costs.length) continue;
+
+      const avg = costs.reduce((a, b) => a + b, 0) / costs.length;
+      console.log(`NADAC ${drug.key}: $${avg.toFixed(4)}/unit (dataset ${datasetId.slice(0, 8)})`);
+      return avg;
+    } catch (e) {
+      console.warn(`NADAC ${datasetId} → exception for ${drug.key}:`, e);
+      continue;
+    }
   }
+  return null;
 }
 
 // ── Price builder ──────────────────────────────────────────────────────────
