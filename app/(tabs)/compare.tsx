@@ -1,7 +1,7 @@
 import { useState } from "react";
 import {
   ActivityIndicator,
-  Alert,
+  Keyboard,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -12,7 +12,8 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { lookupProduct } from "../../store/lookup";
+import BarcodeScanner from "../../components/BarcodeScanner";
+import { lookupByUPC, lookupProduct } from "../../store/lookup";
 import { COLOR, FONT, RADIUS, SPACE } from "../../store/theme";
 import { MedProduct, useMedStore } from "../../store/useMedStore";
 
@@ -60,32 +61,47 @@ export default function CompareScreen() {
   const [loadingA, setLoadingA] = useState(false);
   const [loadingB, setLoadingB] = useState(false);
   const [modalVisible, setModalVisible] = useState(false);
+  const [scannerOpen, setScannerOpen] = useState(false);
   const [activeSlot, setActiveSlot] = useState<"a" | "b">("a");
   const [searchQuery, setSearchQuery] = useState("");
+  const [errorMsg, setErrorMsg] = useState("");
 
   const openSearch = (slot: "a" | "b") => {
     setActiveSlot(slot);
     setSearchQuery("");
+    setErrorMsg("");
     setModalVisible(true);
+  };
+
+  const finishSlotLookup = (product: MedProduct | null) => {
+    if (!product) {
+      setErrorMsg("Not found — try the generic name (e.g. acetaminophen, ibuprofen).");
+    } else {
+      setErrorMsg("");
+      if (activeSlot === "a") setCompareA(product);
+      else setCompareB(product);
+    }
+    if (activeSlot === "a") setLoadingA(false);
+    else setLoadingB(false);
   };
 
   const doSearch = async () => {
     if (!searchQuery.trim()) return;
+    Keyboard.dismiss();
     setModalVisible(false);
     if (activeSlot === "a") setLoadingA(true);
     else setLoadingB(true);
     const result = await lookupProduct(searchQuery.trim());
-    if (!result) {
-      Alert.alert(
-        "Not found",
-        "Try the generic name (e.g. acetaminophen, ibuprofen, loratadine, vitamin c).",
-      );
-    } else {
-      if (activeSlot === "a") setCompareA(result.product);
-      else setCompareB(result.product);
-    }
-    if (activeSlot === "a") setLoadingA(false);
-    else setLoadingB(false);
+    finishSlotLookup(result?.product || null);
+  };
+
+  const handleScanInCompare = async (upc: string) => {
+    setScannerOpen(false);
+    setModalVisible(false);
+    if (activeSlot === "a") setLoadingA(true);
+    else setLoadingB(true);
+    const result = await lookupByUPC(upc);
+    finishSlotLookup(result);
   };
 
   const bothLoaded = compareA && compareB;
@@ -289,6 +305,15 @@ export default function CompareScreen() {
         )}
       </View>
 
+      {errorMsg ? (
+        <View style={S.errorBanner}>
+          <Text style={S.errorBannerText}>{errorMsg}</Text>
+          <TouchableOpacity onPress={() => setErrorMsg("")}>
+            <Text style={S.errorDismiss}>Dismiss</Text>
+          </TouchableOpacity>
+        </View>
+      ) : null}
+
       <Modal visible={modalVisible} transparent animationType="slide">
         <KeyboardAvoidingView
           behavior={Platform.OS === "ios" ? "padding" : "height"}
@@ -316,18 +341,33 @@ export default function CompareScreen() {
             />
             <View style={S.modalBtns}>
               <TouchableOpacity
-                style={[S.modalBtn, S.modalBtnGray]}
-                onPress={() => setModalVisible(false)}
+                style={[S.modalBtn, S.modalBtnScan]}
+                onPress={() => {
+                  setModalVisible(false);
+                  setScannerOpen(true);
+                }}
               >
-                <Text style={S.modalBtnGrayText}>Cancel</Text>
+                <Text style={S.modalBtnScanText}>Scan barcode</Text>
               </TouchableOpacity>
               <TouchableOpacity style={S.modalBtn} onPress={doSearch}>
                 <Text style={S.modalBtnText}>Search</Text>
               </TouchableOpacity>
             </View>
+            <TouchableOpacity
+              style={S.modalCancel}
+              onPress={() => setModalVisible(false)}
+            >
+              <Text style={S.modalCancelText}>Cancel</Text>
+            </TouchableOpacity>
           </View>
         </KeyboardAvoidingView>
       </Modal>
+
+      <BarcodeScanner
+        visible={scannerOpen}
+        onClose={() => setScannerOpen(false)}
+        onScanned={handleScanInCompare}
+      />
     </ScrollView>
   );
 }
@@ -513,6 +553,33 @@ const S = StyleSheet.create({
     alignItems: "center",
   },
   modalBtnText: { color: COLOR.white, fontSize: FONT.md, fontWeight: "500" },
-  modalBtnGray: { backgroundColor: "#f0f0f0" },
-  modalBtnGrayText: { color: "#444", fontSize: FONT.md, fontWeight: "500" },
+  modalBtnScan: { backgroundColor: "#333" },
+  modalBtnScanText: { color: COLOR.white, fontSize: FONT.md, fontWeight: "500" },
+  modalCancel: {
+    alignItems: "center",
+    paddingVertical: 14,
+    marginTop: 6,
+  },
+  modalCancelText: { color: COLOR.textMuted, fontSize: FONT.md },
+  errorBanner: {
+    backgroundColor: COLOR.dangerLight,
+    borderRadius: RADIUS.sm,
+    padding: 14,
+    marginHorizontal: SPACE.md,
+    marginBottom: SPACE.md,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  errorBannerText: {
+    fontSize: FONT.sm,
+    color: COLOR.danger,
+    flex: 1,
+    marginRight: 10,
+  },
+  errorDismiss: {
+    fontSize: FONT.sm,
+    color: COLOR.danger,
+    fontWeight: "600",
+  },
 });

@@ -1,7 +1,8 @@
 import { useRouter } from "expo-router";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Keyboard,
   ScrollView,
   StyleSheet,
   Text,
@@ -11,12 +12,15 @@ import {
 } from "react-native";
 import BarcodeScanner from "../../components/BarcodeScanner";
 import {
-  loadLastProduct,
   loadRecentSearches,
   saveLastProduct,
   saveRecentSearches,
 } from "../../store/cache";
-import { lookupByUPC, lookupProduct } from "../../store/lookup";
+import {
+  lookupByUPC,
+  lookupProductsMulti,
+  MultiSearchResult,
+} from "../../store/lookup";
 import { COLOR, FONT, RADIUS, SPACE } from "../../store/theme";
 import { MedProduct, useMedStore } from "../../store/useMedStore";
 
@@ -60,6 +64,53 @@ function getSuggestions(q: string): string[] {
   return [...startsWith, ...contains].slice(0, 6);
 }
 
+// Levenshtein edit distance — used for fuzzy "did you mean?" suggestions.
+function levenshtein(a: string, b: string): number {
+  const m = a.length;
+  const n = b.length;
+  const dp: number[] = Array.from({ length: n + 1 }, (_, i) => i);
+  for (let i = 1; i <= m; i++) {
+    let prev = dp[0];
+    dp[0] = i;
+    for (let j = 1; j <= n; j++) {
+      const temp = dp[j];
+      dp[j] =
+        a[i - 1] === b[j - 1]
+          ? prev
+          : 1 + Math.min(prev, dp[j], dp[j - 1]);
+      prev = temp;
+    }
+  }
+  return dp[n];
+}
+
+// Returns smart "did you mean?" suggestions using prefix/contains first,
+// then Levenshtein distance for typo/phonetic fallbacks.
+function getFuzzySuggestions(q: string): string[] {
+  if (q.length < 2) return [];
+  const lower = q.toLowerCase();
+
+  // Exact prefix / substring matches first
+  const exact = getSuggestions(lower);
+  if (exact.length >= 4) return exact.slice(0, 5);
+
+  // Score each known name: prefer short edit distance, penalise length mismatch
+  const seen = new Set(exact);
+  const fuzzy = KNOWN_NAMES.filter((n) => !seen.has(n))
+    .map((name) => {
+      // Compare against the first word of multi-word names for short queries
+      const firstWord = name.split(" ")[0];
+      const dist = Math.min(levenshtein(lower, name), levenshtein(lower, firstWord));
+      return { name, dist };
+    })
+    .filter(({ dist }) => dist <= Math.max(2, Math.floor(lower.length / 3)))
+    .sort((a, b) => a.dist - b.dist)
+    .map(({ name }) => name)
+    .slice(0, 5 - exact.length);
+
+  return [...exact, ...fuzzy];
+}
+
 export default function LookupScreen() {
   const router = useRouter();
   const {
@@ -80,15 +131,18 @@ export default function LookupScreen() {
   const [source, setSource] = useState<"drug" | "supplement" | null>(null);
   const [selectedVariantIdx, setSelectedVariantIdx] = useState(0);
   const [selectedStrengthIdx, setSelectedStrengthIdx] = useState(0);
-  const [offlineBanner, setOfflineBanner] = useState(false);
   const [notFound, setNotFound] = useState(false);
   const [notFoundQuery, setNotFoundQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<MultiSearchResult[]>([]);
+  const [inputFocused, setInputFocused] = useState(false);
+  const [compareBanner, setCompareBanner] = useState("");
+  const blurTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const suggestions = useMemo(() => getSuggestions(query), [query]);
   const showSuggestions =
-    suggestions.length > 0 && !product && !loading && !notFound;
+    inputFocused && suggestions.length > 0 && !loading && query.length >= 2 && searchResults.length === 0;
   const notFoundSuggestions = useMemo(
-    () => getSuggestions(notFoundQuery).slice(0, 4),
+    () => getFuzzySuggestions(notFoundQuery),
     [notFoundQuery],
   );
 
@@ -98,29 +152,18 @@ export default function LookupScreen() {
     });
   }, []);
 
-  const finishLookup = async (
+  const finishLookup = (
     p: MedProduct | null,
     src: "drug" | "supplement",
     raw: any = null,
     searchedQuery: string = "",
   ) => {
     if (!p) {
-      const cached = await loadLastProduct();
-      if (cached?.product) {
-        setProduct(cached.product);
-        setSource("drug");
-        setCurrentProduct(cached.product);
-        setRawFDAResult(cached.raw);
-        setOfflineBanner(true);
-        setLoading(false);
-        return;
-      }
       setNotFound(true);
       setNotFoundQuery(searchedQuery);
       setLoading(false);
       return;
     }
-    setOfflineBanner(false);
     setNotFound(false);
     setProduct(p);
     setSource(src);
@@ -132,25 +175,52 @@ export default function LookupScreen() {
     setLoading(false);
   };
 
+  const handleInputFocus = () => {
+    if (blurTimeoutRef.current) clearTimeout(blurTimeoutRef.current);
+    setInputFocused(true);
+  };
+
+  const handleInputBlur = () => {
+    blurTimeoutRef.current = setTimeout(() => setInputFocused(false), 150);
+  };
+
   const searchProduct = async (overrideQuery?: string) => {
     const q = (overrideQuery ?? query).trim();
     if (!q) return;
+    Keyboard.dismiss();
+    setInputFocused(false);
     setLoading(true);
     setProduct(null);
     setSource(null);
     setNotFound(false);
+    setSearchResults([]);
+
     if (looksLikeUPC(q)) {
       const result = await lookupByUPC(q);
       finishLookup(result, "drug", null, q);
       return;
     }
-    const result = await lookupProduct(q);
-    finishLookup(
-      result?.product || null,
-      result?.source || "drug",
-      result?.raw || null,
-      q,
-    );
+
+    const results = await lookupProductsMulti(q);
+
+    if (results.length === 0) {
+      finishLookup(null, "drug", null, q);
+      return;
+    }
+
+    if (results.length === 1) {
+      finishLookup(results[0].product, results[0].source, results[0].raw, q);
+      return;
+    }
+
+    // Multiple matches — show picker
+    setSearchResults(results);
+    setLoading(false);
+  };
+
+  const handleSelectResult = (r: MultiSearchResult) => {
+    setSearchResults([]);
+    finishLookup(r.product, r.source, r.raw, query);
   };
 
   const handleScanned = async (upc: string) => {
@@ -167,8 +237,8 @@ export default function LookupScreen() {
     setQuery("");
     setProduct(null);
     setSource(null);
-    setOfflineBanner(false);
     setNotFound(false);
+    setSearchResults([]);
   };
 
   // Reset variant + strength selectors when a new product loads
@@ -201,19 +271,22 @@ export default function LookupScreen() {
     router.push(`/(tabs)/prices?drug=${encodeURIComponent(activePriceKey)}`);
   };
 
+  const showCompareBanner = (msg: string) => {
+    setCompareBanner(msg);
+    setTimeout(() => setCompareBanner(""), 4000);
+  };
+
   const handleAddToCompare = () => {
     if (!product) return;
     if (!compareA) {
       setCompareA(product);
-      alert(
-        `${product.brandName} added as Product A.\n\nSearch another product and tap Add to compare for Product B.`,
-      );
+      showCompareBanner(`Added as Product A`);
     } else if (!compareB) {
       setCompareB(product);
-      alert(`${product.brandName} added as Product B. Go to the Compare tab.`);
+      showCompareBanner(`Added as Product B — go to Compare tab`);
     } else {
       setCompareA(product);
-      alert("Compare slots full — Product A replaced.");
+      showCompareBanner(`Product A replaced`);
     }
   };
 
@@ -238,6 +311,8 @@ export default function LookupScreen() {
                   if (notFound) setNotFound(false);
                 }}
                 onSubmitEditing={() => searchProduct()}
+                onFocus={handleInputFocus}
+                onBlur={handleInputBlur}
                 returnKeyType="search"
                 autoCorrect={false}
                 autoCapitalize="none"
@@ -257,12 +332,8 @@ export default function LookupScreen() {
             </TouchableOpacity>
           </View>
 
-          <Text style={S.hint}>
-            Drug name, brand name, or scan/enter UPC barcode number
-          </Text>
-
-          {/* Autocomplete suggestions */}
-          {showSuggestions && (
+          {/* Autocomplete suggestions — shown as dropdown right below search bar */}
+          {showSuggestions ? (
             <View style={S.suggestionsBox}>
               {suggestions.map((s, i) => (
                 <TouchableOpacity
@@ -272,6 +343,7 @@ export default function LookupScreen() {
                     i === suggestions.length - 1 && S.suggestionRowLast,
                   ]}
                   onPress={() => {
+                    setInputFocused(false);
                     setQuery(s);
                     searchProduct(s);
                   }}
@@ -282,10 +354,74 @@ export default function LookupScreen() {
                 </TouchableOpacity>
               ))}
             </View>
+          ) : (
+            <Text style={S.hint}>
+              Drug name, brand name, or scan/enter UPC barcode number
+            </Text>
+          )}
+
+          {/* Multiple results picker */}
+          {searchResults.length > 1 && !loading && (
+            <View style={S.resultsListWrap}>
+              <View style={S.resultsListHeader}>
+                <Text style={S.resultsListTitle}>
+                  {searchResults.length} products found — select one:
+                </Text>
+              </View>
+              {searchResults.map((r, i) => {
+                const topIngredients = r.product.ingredients.slice(0, 2);
+                const ingStr = topIngredients
+                  .map((ing) =>
+                    [ing.name, ing.concentration].filter(Boolean).join(" "),
+                  )
+                  .filter(Boolean)
+                  .join(" + ");
+                const subtitle = [ingStr, r.product.form]
+                  .filter(Boolean)
+                  .join(" · ");
+                return (
+                  <TouchableOpacity
+                    key={i}
+                    style={[
+                      S.resultItem,
+                      i === searchResults.length - 1 && S.resultItemLast,
+                    ]}
+                    onPress={() => handleSelectResult(r)}
+                    activeOpacity={0.7}
+                  >
+                    <View style={S.resultItemLeft}>
+                      <Text style={S.resultItemName}>{r.product.brandName}</Text>
+                      {subtitle ? (
+                        <Text style={S.resultItemSub}>{subtitle}</Text>
+                      ) : null}
+                    </View>
+                    <View
+                      style={[
+                        S.sourceBadge,
+                        r.source === "supplement"
+                          ? S.sourceBadgeSupp
+                          : S.sourceBadgeDrug,
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          S.sourceBadgeText,
+                          r.source === "supplement"
+                            ? S.sourceBadgeSuppText
+                            : S.sourceBadgeDrugText,
+                        ]}
+                      >
+                        {r.source === "supplement" ? "Supplement" : "OTC Drug"}
+                      </Text>
+                    </View>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
           )}
 
           {/* Recent searches */}
-          {recentSearches.length > 0 && !product && !loading && !showSuggestions && !notFound && (
+          {recentSearches.length > 0 && !product && !loading && !showSuggestions && !notFound && searchResults.length === 0 && (
             <View style={S.recentWrap}>
               <View style={S.recentHeader}>
                 <Text style={S.recentTitle}>Recent searches</Text>
@@ -316,20 +452,11 @@ export default function LookupScreen() {
             </View>
           )}
 
-          {/* Offline banner */}
-          {offlineBanner && (
-            <View style={S.offlineBanner}>
-              <Text style={S.offlineBannerText}>
-                ⚠ No internet — showing last saved result.
-              </Text>
-            </View>
-          )}
-
           {/* Loading */}
           {loading && (
             <View style={S.loadingWrap}>
               <ActivityIndicator size="large" color={COLOR.primaryMid} />
-              <Text style={S.loadingText}>Searching databases...</Text>
+              <Text style={S.loadingText}>Looking up...</Text>
             </View>
           )}
 
@@ -337,32 +464,34 @@ export default function LookupScreen() {
           {notFound && !loading && (
             <View style={S.notFoundCard}>
               <Text style={S.notFoundTitle}>
-                No results for &ldquo;{notFoundQuery}&rdquo;
+                "{notFoundQuery}" not found
               </Text>
               <Text style={S.notFoundText}>
-                Check the spelling or try the generic name (e.g. Tylenol →
-                acetaminophen, Advil → ibuprofen).
+                This product does not match anything in our database. It may be a prescription drug, a store brand under a different name, or a spelling variation.
               </Text>
-              {notFoundSuggestions.length > 0 && (
+              {notFoundSuggestions.length > 0 ? (
                 <>
-                  <Text style={S.notFoundSugLabel}>Did you mean:</Text>
-                  <View style={S.recentList}>
-                    {notFoundSuggestions.map((s, i) => (
-                      <TouchableOpacity
-                        key={i}
-                        style={S.recentChip}
-                        onPress={() => {
-                          setNotFound(false);
-                          setQuery(s);
-                          searchProduct(s);
-                        }}
-                        activeOpacity={0.7}
-                      >
-                        <Text style={S.recentChipText}>{s}</Text>
-                      </TouchableOpacity>
-                    ))}
-                  </View>
+                  <Text style={S.notFoundSugLabel}>Did you mean one of these?</Text>
+                  {notFoundSuggestions.map((s, i) => (
+                    <TouchableOpacity
+                      key={i}
+                      style={S.notFoundSugRow}
+                      onPress={() => {
+                        setNotFound(false);
+                        setQuery(s);
+                        searchProduct(s);
+                      }}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={S.notFoundSugArrow}>→</Text>
+                      <Text style={S.notFoundSugName}>{s}</Text>
+                    </TouchableOpacity>
+                  ))}
                 </>
+              ) : (
+                <Text style={S.notFoundTip}>
+                  Tip: try the generic name (e.g. "Tylenol" → "acetaminophen", "Advil" → "ibuprofen") or scan the barcode.
+                </Text>
               )}
             </View>
           )}
@@ -370,17 +499,10 @@ export default function LookupScreen() {
           {/* Result */}
           {product && (
             <View style={S.resultWrap}>
-              <View style={S.productHeader}>
-                <View style={S.productHeaderLeft}>
-                  <Text style={S.productName}>{product.brandName}</Text>
-                  {product.form ? (
-                    <Text style={S.productForm}>{product.form}</Text>
-                  ) : null}
-                  {product.manufacturer ? (
-                    <Text style={S.manufacturer}>{product.manufacturer}</Text>
-                  ) : null}
-                </View>
-                {source && (
+              {/* Product name — big and clear */}
+              <Text style={S.productName}>{product.brandName}</Text>
+              {source && (
+                <View style={S.sourceRow}>
                   <View
                     style={[
                       S.sourceBadge,
@@ -400,13 +522,16 @@ export default function LookupScreen() {
                       {source === "supplement" ? "Supplement" : "OTC Drug"}
                     </Text>
                   </View>
-                )}
-              </View>
+                  {product.form ? (
+                    <Text style={S.productForm}>{product.form}</Text>
+                  ) : null}
+                </View>
+              )}
 
-              {/* Variant picker — shown when drug family has multiple products */}
+              {/* Variant picker */}
               {product.otcFamily && product.otcFamily.variants.length > 1 && (
                 <View style={S.strengthSection}>
-                  <Text style={S.strengthLabel}>Select product:</Text>
+                  <Text style={S.strengthLabel}>Type:</Text>
                   <View style={S.strengthList}>
                     {product.otcFamily.variants.map((v, i) => (
                       <TouchableOpacity
@@ -432,37 +557,13 @@ export default function LookupScreen() {
                       </TouchableOpacity>
                     ))}
                   </View>
-                  {currentVariant && (
-                    <Text style={S.variantDesc}>{currentVariant.genericDescription}</Text>
-                  )}
                 </View>
               )}
 
-              {displayIsBTC && (
-                <View style={S.alertBTC}>
-                  <Text style={S.alertBTCTitle}>Behind-the-counter product</Text>
-                  <Text style={S.alertBTCText}>
-                    Valid photo ID required. Federal purchase limit applies.
-                  </Text>
-                </View>
-              )}
-
-              {displayNote && (
-                <View style={S.alertWarn}>
-                  <Text style={S.alertWarnText}>ℹ {displayNote}</Text>
-                </View>
-              )}
-
-              {product.servingSizeAlert && (
-                <View style={S.alertWarn}>
-                  <Text style={S.alertWarnText}>⚠ {product.servingSizeAlert}</Text>
-                </View>
-              )}
-
-              {/* Strength picker — shown when selected variant has multiple strengths */}
+              {/* Strength picker */}
               {currentVariant && currentVariant.strengths.length > 1 && (
                 <View style={S.strengthSection}>
-                  <Text style={S.strengthLabel}>Available OTC strengths:</Text>
+                  <Text style={S.strengthLabel}>Strength:</Text>
                   <View style={S.strengthList}>
                     {currentVariant.strengths.map((s, i) => (
                       <TouchableOpacity
@@ -488,16 +589,31 @@ export default function LookupScreen() {
                 </View>
               )}
 
+              {/* Alerts — BTC, warnings, serving size */}
+              {displayIsBTC && (
+                <View style={S.alertBTC}>
+                  <Text style={S.alertBTCTitle}>ID Required</Text>
+                  <Text style={S.alertBTCText}>
+                    Behind-the-counter — bring photo ID.
+                  </Text>
+                </View>
+              )}
+
+              {displayNote && (
+                <View style={S.alertWarn}>
+                  <Text style={S.alertWarnText}>{displayNote}</Text>
+                </View>
+              )}
+
+              {product.servingSizeAlert && (
+                <View style={S.alertWarn}>
+                  <Text style={S.alertWarnText}>{product.servingSizeAlert}</Text>
+                </View>
+              )}
+
+              {/* Ingredients — simplified, one clear list */}
               {displayedIngredients.length > 0 ? (
                 <View style={S.card}>
-                  <View style={S.cardHeader}>
-                    <Text style={S.cardHeaderLeft}>
-                      {source === "supplement"
-                        ? "Supplement facts"
-                        : "Active ingredients"}
-                    </Text>
-                    <Text style={S.cardHeaderRight}>Purpose</Text>
-                  </View>
                   {displayedIngredients.map((ing, i) => (
                     <View
                       key={i}
@@ -506,14 +622,11 @@ export default function LookupScreen() {
                         i === displayedIngredients.length - 1 && S.ingrRowLast,
                       ]}
                     >
-                      <View style={S.ingrLeft}>
-                        <Text style={S.ingrNum}>{i + 1}.</Text>
-                        <View style={S.ingrNameWrap}>
-                          <Text style={S.ingrName}>{ing.name}</Text>
-                          {ing.concentration ? (
-                            <Text style={S.ingrConc}>{ing.concentration}</Text>
-                          ) : null}
-                        </View>
+                      <View style={S.ingrNameWrap}>
+                        <Text style={S.ingrName}>{ing.name}</Text>
+                        {ing.concentration ? (
+                          <Text style={S.ingrConc}>{ing.concentration}</Text>
+                        ) : null}
                       </View>
                       {ing.purpose ? (
                         <Text style={S.ingrPurpose}>{ing.purpose}</Text>
@@ -524,18 +637,25 @@ export default function LookupScreen() {
               ) : (
                 <View style={S.alertWarn}>
                   <Text style={S.alertWarnText}>
-                    Ingredient details not available for this product.
+                    Ingredient details not available.
                   </Text>
                 </View>
               )}
 
-              <View style={S.actionRow}>
-                <TouchableOpacity
-                  style={S.actionBtn}
-                  onPress={handleSeePrices}
-                >
-                  <Text style={S.actionBtnText}>See prices</Text>
-                </TouchableOpacity>
+              {compareBanner ? (
+                <View style={S.compareBanner}>
+                  <Text style={S.compareBannerText}>{compareBanner}</Text>
+                </View>
+              ) : null}
+
+              <TouchableOpacity
+                style={S.actionBtnPrimary}
+                onPress={handleSeePrices}
+                activeOpacity={0.85}
+              >
+                <Text style={S.actionBtnPrimaryText}>See prices</Text>
+              </TouchableOpacity>
+              <View style={S.actionRowSecondary}>
                 <TouchableOpacity
                   style={S.actionBtn}
                   onPress={handleAddToCompare}
@@ -543,12 +663,10 @@ export default function LookupScreen() {
                   <Text style={S.actionBtnText}>Add to compare</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
-                  style={[S.actionBtn, S.actionBtnGray]}
+                  style={S.actionBtn}
                   onPress={() => router.push("/product-detail")}
                 >
-                  <Text style={[S.actionBtnText, S.actionBtnGrayText]}>
-                    More about this
-                  </Text>
+                  <Text style={S.actionBtnText}>Full details</Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -630,6 +748,12 @@ const S = StyleSheet.create({
     borderColor: COLOR.border,
     marginBottom: SPACE.md,
     overflow: "hidden",
+    elevation: 8,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.12,
+    shadowRadius: 6,
+    zIndex: 100,
   },
   suggestionRow: {
     flexDirection: "row",
@@ -677,6 +801,32 @@ const S = StyleSheet.create({
     letterSpacing: 0.5,
     marginBottom: 10,
   },
+  notFoundSugRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 10,
+    borderTopWidth: 0.5,
+    borderTopColor: "#eee",
+    gap: 10,
+  },
+  notFoundSugArrow: {
+    fontSize: FONT.md,
+    color: COLOR.primaryMid,
+    fontWeight: "600",
+  },
+  notFoundSugName: {
+    fontSize: FONT.md,
+    color: COLOR.primaryMid,
+    fontWeight: "500",
+    textTransform: "capitalize",
+  },
+  notFoundTip: {
+    fontSize: FONT.sm,
+    color: COLOR.textMuted,
+    lineHeight: 22,
+    fontStyle: "italic",
+    marginTop: 4,
+  },
 
   // Recent searches
   recentWrap: { marginBottom: SPACE.md },
@@ -713,57 +863,38 @@ const S = StyleSheet.create({
     fontWeight: "500",
   },
 
-  offlineBanner: {
-    backgroundColor: "#FFF3CD",
-    borderRadius: RADIUS.sm,
-    padding: 12,
-    marginBottom: 12,
-    borderLeftWidth: 3,
-    borderLeftColor: "#F59E0B",
-  },
-  offlineBannerText: { fontSize: FONT.sm, color: "#92400E", lineHeight: 20 },
-
   loadingWrap: { alignItems: "center", marginTop: 48, gap: 14 },
   loadingText: { fontSize: FONT.md, color: COLOR.textSub },
 
   resultWrap: { marginTop: SPACE.sm },
-  productHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "flex-start",
-    marginBottom: SPACE.sm,
-  },
-  productHeaderLeft: { flex: 1, marginRight: SPACE.sm },
   productName: {
-    fontSize: FONT.xl,
-    fontWeight: "600",
+    fontSize: FONT.xxl,
+    fontWeight: "700",
     color: COLOR.text,
-    lineHeight: 30,
+    lineHeight: 34,
     textTransform: "capitalize",
+  },
+  sourceRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    marginTop: 6,
+    marginBottom: SPACE.md,
   },
   productForm: {
     fontSize: FONT.sm,
     color: COLOR.textSub,
-    marginTop: 3,
     textTransform: "capitalize",
-  },
-  manufacturer: {
-    fontSize: FONT.sm,
-    color: COLOR.textMuted,
-    marginTop: 2,
-    marginBottom: SPACE.md,
   },
 
   sourceBadge: {
     borderRadius: 10,
-    paddingHorizontal: 10,
+    paddingHorizontal: 12,
     paddingVertical: 5,
-    alignSelf: "flex-start",
-    marginTop: 4,
   },
   sourceBadgeDrug: { backgroundColor: COLOR.primaryLight },
   sourceBadgeSupp: { backgroundColor: COLOR.successLight },
-  sourceBadgeText: { fontSize: FONT.xs, fontWeight: "600" },
+  sourceBadgeText: { fontSize: FONT.sm, fontWeight: "600" },
   sourceBadgeDrugText: { color: COLOR.primary },
   sourceBadgeSuppText: { color: COLOR.success },
 
@@ -801,80 +932,49 @@ const S = StyleSheet.create({
     marginBottom: 14,
     overflow: "hidden",
   },
-  cardHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    backgroundColor: "#f0f0f0",
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderBottomWidth: 0.5,
-    borderBottomColor: COLOR.border,
-  },
-  cardHeaderLeft: {
-    fontSize: FONT.xs,
-    fontWeight: "600",
-    color: COLOR.textSub,
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
-  },
-  cardHeaderRight: {
-    fontSize: FONT.xs,
-    fontWeight: "600",
-    color: COLOR.textSub,
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
-  },
 
   ingrRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "flex-start",
-    paddingHorizontal: 16,
-    paddingVertical: 14,
+    paddingHorizontal: 18,
+    paddingVertical: 16,
     borderBottomWidth: 0.5,
     borderBottomColor: "#eee",
   },
   ingrRowLast: { borderBottomWidth: 0 },
-  ingrLeft: { flexDirection: "row", gap: 10, flex: 1, marginRight: 10 },
-  ingrNameWrap: { flex: 1 },
-  ingrNum: {
-    fontSize: FONT.sm,
-    color: COLOR.textMuted,
-    minWidth: 22,
-    marginTop: 2,
-  },
+  ingrNameWrap: { flex: 1, marginRight: 12 },
   ingrName: {
-    fontSize: FONT.lg,
-    fontWeight: "600",
+    fontSize: FONT.xl,
+    fontWeight: "700",
     color: COLOR.text,
     textTransform: "capitalize",
   },
-  ingrConc: { fontSize: FONT.sm, color: COLOR.textSub, marginTop: 3 },
+  ingrConc: { fontSize: FONT.md, color: COLOR.primaryMid, fontWeight: "600", marginTop: 4 },
   ingrPurpose: {
     fontSize: FONT.sm,
     color: COLOR.textSub,
     textAlign: "right",
     maxWidth: 130,
+    marginTop: 2,
   },
 
   strengthSection: {
     marginBottom: 14,
   },
   strengthLabel: {
-    fontSize: FONT.xs,
+    fontSize: FONT.sm,
     fontWeight: "600",
     color: COLOR.textMuted,
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
     marginBottom: 8,
   },
-  strengthList: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  strengthList: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
   strengthChip: {
     borderWidth: 1.5,
     borderColor: COLOR.border,
-    borderRadius: 20,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
+    borderRadius: 22,
+    paddingHorizontal: 18,
+    paddingVertical: 11,
     backgroundColor: COLOR.white,
   },
   strengthChipActive: {
@@ -882,46 +982,113 @@ const S = StyleSheet.create({
     backgroundColor: COLOR.primaryLight,
   },
   strengthChipText: {
-    fontSize: FONT.sm,
+    fontSize: FONT.md,
     color: COLOR.textSub,
     fontWeight: "500",
   },
   strengthChipTextActive: {
     color: COLOR.primary,
-    fontWeight: "600",
+    fontWeight: "700",
   },
   strengthChipBTC: {
     fontSize: FONT.xs,
     color: COLOR.danger,
     fontWeight: "700",
   },
-  variantDesc: {
-    fontSize: FONT.xs,
-    color: COLOR.textMuted,
-    marginTop: 8,
-    fontStyle: "italic",
+
+  compareBanner: {
+    backgroundColor: COLOR.successLight,
+    borderRadius: RADIUS.sm,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    marginBottom: 10,
+    borderLeftWidth: 3,
+    borderLeftColor: COLOR.success,
+  },
+  compareBannerText: {
+    fontSize: FONT.md,
+    color: COLOR.success,
+    fontWeight: "500",
   },
 
-  actionRow: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 10,
+  actionBtnPrimary: {
+    backgroundColor: COLOR.primaryMid,
+    borderRadius: RADIUS.sm,
+    paddingVertical: 16,
+    alignItems: "center",
     marginTop: SPACE.sm,
+    marginBottom: 10,
+  },
+  actionBtnPrimaryText: {
+    fontSize: FONT.lg,
+    fontWeight: "700",
+    color: COLOR.white,
+  },
+  actionRowSecondary: {
+    flexDirection: "row",
+    gap: 10,
   },
   actionBtn: {
+    flex: 1,
     borderWidth: 1.5,
-    borderColor: COLOR.primaryMid,
+    borderColor: COLOR.border,
     borderRadius: RADIUS.sm,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingVertical: 14,
+    alignItems: "center",
   },
   actionBtnText: {
     fontSize: FONT.md,
     fontWeight: "500",
-    color: COLOR.primaryMid,
+    color: COLOR.textSub,
   },
-  actionBtnGray: { borderColor: "#ccc" },
-  actionBtnGrayText: { color: COLOR.textSub },
+
+  // Multi-result picker list
+  resultsListWrap: {
+    backgroundColor: COLOR.white,
+    borderRadius: RADIUS.md,
+    borderWidth: 0.5,
+    borderColor: COLOR.border,
+    marginBottom: SPACE.md,
+    overflow: "hidden",
+  },
+  resultsListHeader: {
+    backgroundColor: "#f0f0f0",
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderBottomWidth: 0.5,
+    borderBottomColor: COLOR.border,
+  },
+  resultsListTitle: {
+    fontSize: FONT.xs,
+    fontWeight: "600",
+    color: COLOR.textSub,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
+  resultItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderBottomWidth: 0.5,
+    borderBottomColor: "#eee",
+  },
+  resultItemLast: { borderBottomWidth: 0 },
+  resultItemLeft: { flex: 1, marginRight: 10 },
+  resultItemName: {
+    fontSize: FONT.md,
+    fontWeight: "600",
+    color: COLOR.text,
+    textTransform: "capitalize",
+    marginBottom: 3,
+  },
+  resultItemSub: {
+    fontSize: FONT.sm,
+    color: COLOR.textSub,
+    textTransform: "capitalize",
+    lineHeight: 18,
+  },
 
   // Floating scan button
   floatingWrap: {

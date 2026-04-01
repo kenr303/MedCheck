@@ -99,13 +99,15 @@ export async function lookupFDA(
   for (const url of urls) {
     try {
       const res = await fetch(url);
+      if (!res.ok) continue;
       const data = await res.json();
       if (!data.results?.length) continue;
       for (const r of data.results) {
         if (parseIngredients(r).length === 0) continue;
         candidates.push({ r, score: scoreFDAResult(r, query.trim()) });
       }
-    } catch {
+    } catch (e) {
+      console.error("[lookupFDA] fetch error:", e);
       continue;
     }
   }
@@ -115,18 +117,128 @@ export async function lookupFDA(
   return { product: buildProduct(best, query.trim()), raw: best };
 }
 
+// Build a deduplication key from a raw FDA result so we don't show duplicate
+// entries that differ only by manufacturer or lot number.
+function buildDedupeKey(r: any): string {
+  const ingredients = parseIngredients(r);
+  const names = ingredients
+    .map((i) => i.name.toLowerCase().replace(/\s+/g, ""))
+    .sort()
+    .join("+");
+  const strengths = ingredients
+    .map((i) => i.concentration.toLowerCase().replace(/\s+/g, ""))
+    .sort()
+    .join("+");
+  const form = (r.dosage_form?.[0] || "").toLowerCase().split(" ")[0];
+  return `${names}_${strengths}_${form}`;
+}
+
+// Fetch multiple distinct FDA results for a query (parallel requests, deduped).
+export async function searchFDAMultiple(
+  query: string,
+): Promise<Array<{ product: MedProduct; raw: any }>> {
+  const q = encodeURIComponent(query.trim());
+  const urls = [
+    `https://api.fda.gov/drug/label.json?search=openfda.brand_name:"${q}"&limit=10`,
+    `https://api.fda.gov/drug/label.json?search=openfda.generic_name:"${q}"&limit=10`,
+    `https://api.fda.gov/drug/label.json?search=openfda.substance_name:"${q}"&limit=10`,
+  ];
+
+  const responses = await Promise.allSettled(
+    urls.map((url) =>
+      fetch(url).then((r) => (r.ok ? r.json() : Promise.reject(r.status))),
+    ),
+  );
+
+  const seen = new Set<string>();
+  const candidates: Array<{ product: MedProduct; raw: any; score: number }> =
+    [];
+
+  for (const result of responses) {
+    if (result.status !== "fulfilled") continue;
+    const data = result.value;
+    if (!data.results?.length) continue;
+    for (const r of data.results) {
+      if (parseIngredients(r).length === 0) continue;
+      const key = buildDedupeKey(r);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      candidates.push({
+        product: buildProduct(r, query.trim()),
+        raw: r,
+        score: scoreFDAResult(r, query.trim()),
+      });
+    }
+  }
+
+  candidates.sort((a, b) => b.score - a.score);
+  return candidates.slice(0, 8).map(({ product, raw }) => ({ product, raw }));
+}
+
+export interface MultiSearchResult {
+  product: MedProduct;
+  raw: any;
+  source: "drug" | "supplement";
+}
+
+// Main multi-result lookup. Returns an array:
+//   length 0  → not found
+//   length 1  → auto-select (exact/curated match)
+//   length >1 → show picker list to user
+export async function lookupProductsMulti(
+  query: string,
+): Promise<MultiSearchResult[]> {
+  const q = query.trim();
+
+  // 1. Curated OTC database — authoritative single match with variant picker
+  const otcProduct = lookupOTC(q);
+  if (otcProduct) {
+    return [{ product: otcProduct, raw: null, source: "drug" }];
+  }
+
+  // 2. Local supplement database — authoritative single match
+  if (looksLikeSupplement(q)) {
+    const local = lookupSupplement(q);
+    if (local) return [{ product: local, raw: null, source: "supplement" }];
+  }
+
+  // 3. FDA multi-search — returns multiple distinct products
+  const fdaResults = await searchFDAMultiple(q);
+  if (fdaResults.length > 0) {
+    return fdaResults.map((r) => ({
+      product: r.product,
+      raw: r.raw,
+      source: "drug" as const,
+    }));
+  }
+
+  // 4. DSLD supplement fallback
+  if (looksLikeSupplement(q)) {
+    const dsld = await lookupDSLD(q);
+    if (dsld) return [{ product: dsld, raw: null, source: "supplement" }];
+  }
+
+  // 5. Broad DSLD attempt for anything not found above
+  const dsld = await lookupDSLD(q);
+  if (dsld) return [{ product: dsld, raw: null, source: "supplement" }];
+
+  return [];
+}
+
 export async function lookupDSLD(query: string): Promise<MedProduct | null> {
   try {
     const q = encodeURIComponent(query.trim());
     const res = await fetch(
       `https://api.ods.od.nih.gov/dsld/v9/browse-products?name=${q}&limit=1`,
     );
+    if (!res.ok) return null;
     const data = await res.json();
     if (!data.data?.length) return null;
     const product = data.data[0];
     const detailRes = await fetch(
       `https://api.ods.od.nih.gov/dsld/v9/product/${product.id}/label-info`,
     );
+    if (!detailRes.ok) return null;
     const detail = await detailRes.json();
     const ingredients: Ingredient[] = (detail.servingIngredients || [])
       .map((ing: any) => ({
@@ -155,7 +267,8 @@ export async function lookupDSLD(query: string): Promise<MedProduct | null> {
       isBTC: false,
       genericKey: "",
     };
-  } catch {
+  } catch (e) {
+    console.error("[lookupDSLD] error:", e);
     return null;
   }
 }
@@ -187,6 +300,7 @@ export async function lookupByUPC(upc: string): Promise<MedProduct | null> {
   for (const url of fdaUrls) {
     try {
       const res = await fetch(url);
+      if (!res.ok) continue;
       const data = await res.json();
       if (data.results?.length > 0) {
         const r = data.results[0];
@@ -197,7 +311,8 @@ export async function lookupByUPC(upc: string): Promise<MedProduct | null> {
         }
         return buildProduct(r, genericName || upc);
       }
-    } catch {
+    } catch (e) {
+      console.error("[lookupByUPC] FDA fetch error:", e);
       continue;
     }
   }
@@ -207,6 +322,7 @@ export async function lookupByUPC(upc: string): Promise<MedProduct | null> {
     const res = await fetch(
       `https://world.openfoodfacts.org/api/v0/product/${upc}.json`,
     );
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
     if (data.status === 1 && data.product) {
       const name = data.product.product_name || data.product.generic_name || "";
@@ -215,13 +331,16 @@ export async function lookupByUPC(upc: string): Promise<MedProduct | null> {
         if (result) return result;
       }
     }
-  } catch {}
+  } catch (e) {
+    console.error("[lookupByUPC] Open Food Facts error:", e);
+  }
 
   // 3. UPCItemDB
   try {
     const res = await fetch(
       `https://api.upcitemdb.com/prod/trial/lookup?upc=${upc}`,
     );
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
     if (data.items?.length > 0) {
       const title = data.items[0].title || "";
@@ -230,7 +349,9 @@ export async function lookupByUPC(upc: string): Promise<MedProduct | null> {
         if (result) return result;
       }
     }
-  } catch {}
+  } catch (e) {
+    console.error("[lookupByUPC] UPCItemDB error:", e);
+  }
 
   return null;
 }

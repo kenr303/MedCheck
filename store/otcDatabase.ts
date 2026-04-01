@@ -476,11 +476,11 @@ export const OTC_FAMILIES: Record<string, OTCDrugFamily> = {
 
   dextromethorphan: {
     familyName: "Dextromethorphan (Robitussin / Delsym)",
-    defaultVariantIndex: 0,
+    defaultVariantIndex: 1,
     variants: [
       {
         name: "Dextromethorphan (Cough Only)",
-        chipLabel: "Robitussin DM / Delsym",
+        chipLabel: "Delsym / DXM Only",
         genericDescription: "Dextromethorphan only",
         form: "liquid / tablet / lozenge",
         defaultStrengthIndex: 1,

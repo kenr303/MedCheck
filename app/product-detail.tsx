@@ -8,6 +8,7 @@ import {
     TouchableOpacity,
     View,
 } from "react-native";
+import { parseIngredients } from "../store/lookup";
 import { useMedStore } from "../store/useMedStore";
 
 type FullDetail = {
@@ -72,28 +73,7 @@ export default function ProductDetailScreen() {
   }, []);
 
   const buildDetail = (r: any, fallbackName: string) => {
-    const rawIngredients: string[] =
-      r.active_ingredient || r.active_ingredients || [];
-    const purposeList: string[] = (r.purpose || []).map((p: string) =>
-      p.replace(/^purpose\s*/i, "").trim(),
-    );
-    const ingredients = rawIngredients.map((ing: string, i: number) => {
-      const s = ing
-        .replace(
-          /active\s+ingredient[s]?\s*(\(in\s+each\s+[\w\s]+\))?\s*/gi,
-          "",
-        )
-        .replace(/each\s+[\w\s]+\s+contains\s*/gi, "")
-        .trim();
-      const match = s.match(
-        /([\d.]+\s*(?:mg|mcg|mL|g|%|IU|units?)(?:\s*\/\s*[\w.]+)?)\s*$/i,
-      );
-      return {
-        name: match ? s.slice(0, s.lastIndexOf(match[0])).trim() : s,
-        concentration: match ? match[0].trim() : "",
-        purpose: purposeList[i] || purposeList[0] || "",
-      };
-    });
+    const ingredients = parseIngredients(r);
 
     setDetail({
       brandName:

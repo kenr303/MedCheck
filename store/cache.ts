@@ -11,7 +11,9 @@ export async function saveLastProduct(product: any, raw: any) {
   try {
     await AsyncStorage.setItem(KEYS.lastProduct, JSON.stringify(product));
     if (raw) await AsyncStorage.setItem(KEYS.lastRaw, JSON.stringify(raw));
-  } catch {}
+  } catch (e) {
+    console.error("[cache] saveLastProduct error:", e);
+  }
 }
 
 export async function loadLastProduct(): Promise<{
@@ -23,7 +25,8 @@ export async function loadLastProduct(): Promise<{
     const r = await AsyncStorage.getItem(KEYS.lastRaw);
     if (!p) return null;
     return { product: JSON.parse(p), raw: r ? JSON.parse(r) : null };
-  } catch {
+  } catch (e) {
+    console.error("[cache] loadLastProduct error:", e);
     return null;
   }
 }
@@ -31,14 +34,17 @@ export async function loadLastProduct(): Promise<{
 export async function saveRecentSearches(searches: string[]) {
   try {
     await AsyncStorage.setItem(KEYS.recentSearches, JSON.stringify(searches));
-  } catch {}
+  } catch (e) {
+    console.error("[cache] saveRecentSearches error:", e);
+  }
 }
 
 export async function loadRecentSearches(): Promise<string[]> {
   try {
     const s = await AsyncStorage.getItem(KEYS.recentSearches);
     return s ? JSON.parse(s) : [];
-  } catch {
+  } catch (e) {
+    console.error("[cache] loadRecentSearches error:", e);
     return [];
   }
 }
@@ -49,7 +55,9 @@ export async function savePriceResult(key: string, result: any) {
     const cache = existing ? JSON.parse(existing) : {};
     cache[key] = { result, timestamp: Date.now() };
     await AsyncStorage.setItem(KEYS.priceCache, JSON.stringify(cache));
-  } catch {}
+  } catch (e) {
+    console.error("[cache] savePriceResult error:", e);
+  }
 }
 
 export async function loadPriceResult(key: string): Promise<any | null> {
@@ -62,7 +70,8 @@ export async function loadPriceResult(key: string): Promise<any | null> {
     // Cache valid for 24 hours
     if (Date.now() - entry.timestamp > 24 * 60 * 60 * 1000) return null;
     return entry.result;
-  } catch {
+  } catch (e) {
+    console.error("[cache] loadPriceResult error:", e);
     return null;
   }
 }
