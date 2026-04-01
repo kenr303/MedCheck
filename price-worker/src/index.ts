@@ -118,6 +118,8 @@ async function fetchNADACPerUnit(
         continue;
       }
 
+      // Strongly prefer generic ("G") rows — brand costs are much higher
+      // and would produce wildly inflated OTC price estimates.
       const genericRows = rows.filter(
         (r) => r.classification_for_rate_setting === "G",
       );
@@ -127,9 +129,17 @@ async function fetchNADACPerUnit(
         .filter((n) => !isNaN(n) && n > 0);
       if (!costs.length) continue;
 
-      const avg = costs.reduce((a, b) => a + b, 0) / costs.length;
-      console.log(`NADAC ${drug.key}: $${avg.toFixed(4)}/unit (dataset ${datasetId.slice(0, 8)})`);
-      return avg;
+      // Use MINIMUM cost (cheapest generic) rather than average,
+      // since OTC stores price against the cheapest available.
+      const minCost = Math.min(...costs);
+
+      // Sanity cap: if per-unit cost exceeds $2, it's likely brand
+      // data leaking through. Cap at $1/unit for OTC generics.
+      const capped = Math.min(minCost, 1.0);
+      console.log(
+        `NADAC ${drug.key}: $${capped.toFixed(4)}/unit (min of ${costs.length} rows, dataset ${datasetId.slice(0, 8)})`,
+      );
+      return capped;
     } catch (e) {
       console.warn(`NADAC ${datasetId} → exception for ${drug.key}:`, e);
       continue;
@@ -270,7 +280,13 @@ async function handleRequest(
 
     const drugKey = url.searchParams.get("drug");
     if (drugKey) {
-      const drugData = cached.prices[drugKey] ?? null;
+      // Try exact key first, then fall back to base name (e.g. "acetaminophen_500" → "acetaminophen")
+      // This ensures backward compatibility during the transition to strength-specific keys.
+      let drugData = cached.prices[drugKey] ?? null;
+      if (!drugData && drugKey.includes("_")) {
+        const baseKey = drugKey.replace(/_[^_]+$/, "");
+        drugData = cached.prices[baseKey] ?? null;
+      }
       return json({
         drug: drugKey,
         updatedAt: cached.updatedAt,
