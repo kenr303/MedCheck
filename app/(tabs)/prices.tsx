@@ -30,1374 +30,90 @@ type SearchedProduct = {
   items: PriceItem[];
 };
 
-// Static fallback prices — used when the live worker is unreachable or offline.
-// Update these manually once or twice a year. Live prices come from the worker.
-const PRICE_DB: Record<string, SearchedProduct> = {
+// ── Strength picker options ─────────────────────────────────────────────────
+// Maps a base drug name to its available strength-specific keys.
+// Used to show a strength picker when user searches by generic name.
+type StrengthOption = { label: string; key: string };
+const DRUG_STRENGTHS: Record<string, { default: string; options: StrengthOption[] }> = {
   acetaminophen: {
-    genericName: "Acetaminophen",
-    strength: "500 mg",
-    items: [
-      {
-        name: "Equate Acetaminophen",
-        store: "Walmart",
-        count: "100 ct",
-        price: 4.88,
-        pricePerPill: 0.05,
-        isGeneric: true,
-        url: "https://www.walmart.com/search?q=equate+acetaminophen+500mg+100ct",
-      },
-      {
-        name: "CVS Health Acetaminophen",
-        store: "CVS",
-        count: "100 ct",
-        price: 6.99,
-        pricePerPill: 0.07,
-        isGeneric: true,
-        url: "https://www.cvs.com/search?searchTerm=cvs+acetaminophen+500mg",
-      },
-      {
-        name: "Amazon Basic Care Acetaminophen",
-        store: "Amazon",
-        count: "100 ct",
-        price: 7.49,
-        pricePerPill: 0.07,
-        isGeneric: true,
-        url: "https://www.amazon.com/s?k=amazon+basic+care+acetaminophen+500mg",
-      },
-      {
-        name: "Walgreens Acetaminophen",
-        store: "Walgreens",
-        count: "100 ct",
-        price: 7.99,
-        pricePerPill: 0.08,
-        isGeneric: true,
-        url: "https://www.walgreens.com/search/results.jsp?Ntt=acetaminophen+500mg+100ct",
-      },
-      {
-        name: "Tylenol Extra Strength",
-        store: "Amazon",
-        count: "100 ct",
-        price: 11.47,
-        pricePerPill: 0.11,
-        isGeneric: false,
-        url: "https://www.amazon.com/s?k=tylenol+extra+strength+500mg+100ct",
-      },
-      {
-        name: "Tylenol Extra Strength",
-        store: "Walmart",
-        count: "100 ct",
-        price: 12.98,
-        pricePerPill: 0.13,
-        isGeneric: false,
-        url: "https://www.walmart.com/search?q=tylenol+extra+strength+500mg+100ct",
-      },
-      {
-        name: "Tylenol Extra Strength",
-        store: "CVS",
-        count: "100 ct",
-        price: 14.99,
-        pricePerPill: 0.15,
-        isGeneric: false,
-        url: "https://www.cvs.com/search?searchTerm=tylenol+extra+strength+500mg",
-      },
-      {
-        name: "Tylenol Extra Strength",
-        store: "Walgreens",
-        count: "100 ct",
-        price: 15.99,
-        pricePerPill: 0.16,
-        isGeneric: false,
-        url: "https://www.walgreens.com/search/results.jsp?Ntt=tylenol+extra+strength+500mg",
-      },
-    ],
-  },
-  ibuprofen: {
-    genericName: "Ibuprofen",
-    strength: "200 mg",
-    items: [
-      {
-        name: "Equate Ibuprofen",
-        store: "Walmart",
-        count: "100 ct",
-        price: 4.48,
-        pricePerPill: 0.04,
-        isGeneric: true,
-        url: "https://www.walmart.com/search?q=equate+ibuprofen+200mg+100ct",
-      },
-      {
-        name: "CVS Health Ibuprofen",
-        store: "CVS",
-        count: "100 ct",
-        price: 5.99,
-        pricePerPill: 0.06,
-        isGeneric: true,
-        url: "https://www.cvs.com/search?searchTerm=cvs+ibuprofen+200mg",
-      },
-      {
-        name: "Amazon Basic Care Ibuprofen",
-        store: "Amazon",
-        count: "100 ct",
-        price: 6.49,
-        pricePerPill: 0.06,
-        isGeneric: true,
-        url: "https://www.amazon.com/s?k=amazon+basic+care+ibuprofen+200mg",
-      },
-      {
-        name: "Walgreens Ibuprofen",
-        store: "Walgreens",
-        count: "100 ct",
-        price: 6.99,
-        pricePerPill: 0.07,
-        isGeneric: true,
-        url: "https://www.walgreens.com/search/results.jsp?Ntt=ibuprofen+200mg+100ct",
-      },
-      {
-        name: "Advil",
-        store: "Amazon",
-        count: "100 ct",
-        price: 10.97,
-        pricePerPill: 0.11,
-        isGeneric: false,
-        url: "https://www.amazon.com/s?k=advil+200mg+100ct",
-      },
-      {
-        name: "Advil",
-        store: "Walmart",
-        count: "100 ct",
-        price: 11.98,
-        pricePerPill: 0.12,
-        isGeneric: false,
-        url: "https://www.walmart.com/search?q=advil+200mg+100ct",
-      },
-      {
-        name: "Advil",
-        store: "CVS",
-        count: "100 ct",
-        price: 13.99,
-        pricePerPill: 0.14,
-        isGeneric: false,
-        url: "https://www.cvs.com/search?searchTerm=advil+200mg",
-      },
-      {
-        name: "Advil",
-        store: "Walgreens",
-        count: "100 ct",
-        price: 14.49,
-        pricePerPill: 0.14,
-        isGeneric: false,
-        url: "https://www.walgreens.com/search/results.jsp?Ntt=advil+200mg",
-      },
-    ],
-  },
-  loratadine: {
-    genericName: "Loratadine",
-    strength: "10 mg",
-    items: [
-      {
-        name: "Equate Loratadine",
-        store: "Walmart",
-        count: "30 ct",
-        price: 6.88,
-        pricePerPill: 0.23,
-        isGeneric: true,
-        url: "https://www.walmart.com/search?q=equate+loratadine+10mg+30ct",
-      },
-      {
-        name: "CVS Health Loratadine",
-        store: "CVS",
-        count: "30 ct",
-        price: 7.99,
-        pricePerPill: 0.27,
-        isGeneric: true,
-        url: "https://www.cvs.com/search?searchTerm=cvs+loratadine+10mg",
-      },
-      {
-        name: "Walgreens Loratadine",
-        store: "Walgreens",
-        count: "30 ct",
-        price: 9.49,
-        pricePerPill: 0.32,
-        isGeneric: true,
-        url: "https://www.walgreens.com/search/results.jsp?Ntt=loratadine+10mg+30ct",
-      },
-      {
-        name: "Amazon Basic Care Loratadine",
-        store: "Amazon",
-        count: "30 ct",
-        price: 10.99,
-        pricePerPill: 0.37,
-        isGeneric: true,
-        url: "https://www.amazon.com/s?k=amazon+basic+care+loratadine+10mg",
-      },
-      {
-        name: "Claritin",
-        store: "Amazon",
-        count: "30 ct",
-        price: 12.47,
-        pricePerPill: 0.42,
-        isGeneric: false,
-        url: "https://www.amazon.com/s?k=claritin+10mg+30ct",
-      },
-      {
-        name: "Claritin",
-        store: "Walmart",
-        count: "30 ct",
-        price: 13.88,
-        pricePerPill: 0.46,
-        isGeneric: false,
-        url: "https://www.walmart.com/search?q=claritin+10mg+30ct",
-      },
-      {
-        name: "Claritin",
-        store: "CVS",
-        count: "30 ct",
-        price: 17.49,
-        pricePerPill: 0.58,
-        isGeneric: false,
-        url: "https://www.cvs.com/search?searchTerm=claritin+10mg",
-      },
-      {
-        name: "Claritin",
-        store: "Walgreens",
-        count: "30 ct",
-        price: 18.99,
-        pricePerPill: 0.63,
-        isGeneric: false,
-        url: "https://www.walgreens.com/search/results.jsp?Ntt=claritin+10mg+30ct",
-      },
-    ],
-  },
-  cetirizine: {
-    genericName: "Cetirizine",
-    strength: "10 mg",
-    items: [
-      {
-        name: "Equate Cetirizine",
-        store: "Walmart",
-        count: "45 ct",
-        price: 7.88,
-        pricePerPill: 0.18,
-        isGeneric: true,
-        url: "https://www.walmart.com/search?q=equate+cetirizine+10mg",
-      },
-      {
-        name: "CVS Health Cetirizine",
-        store: "CVS",
-        count: "45 ct",
-        price: 9.49,
-        pricePerPill: 0.21,
-        isGeneric: true,
-        url: "https://www.cvs.com/search?searchTerm=cvs+cetirizine+10mg",
-      },
-      {
-        name: "Amazon Basic Care Cetirizine",
-        store: "Amazon",
-        count: "45 ct",
-        price: 9.99,
-        pricePerPill: 0.22,
-        isGeneric: true,
-        url: "https://www.amazon.com/s?k=amazon+basic+care+cetirizine+10mg",
-      },
-      {
-        name: "Zyrtec",
-        store: "Amazon",
-        count: "45 ct",
-        price: 19.97,
-        pricePerPill: 0.44,
-        isGeneric: false,
-        url: "https://www.amazon.com/s?k=zyrtec+10mg+45ct",
-      },
-      {
-        name: "Zyrtec",
-        store: "Walmart",
-        count: "45 ct",
-        price: 21.98,
-        pricePerPill: 0.49,
-        isGeneric: false,
-        url: "https://www.walmart.com/search?q=zyrtec+10mg",
-      },
-      {
-        name: "Zyrtec",
-        store: "CVS",
-        count: "45 ct",
-        price: 24.99,
-        pricePerPill: 0.56,
-        isGeneric: false,
-        url: "https://www.cvs.com/search?searchTerm=zyrtec+10mg",
-      },
-      {
-        name: "Zyrtec",
-        store: "Walgreens",
-        count: "45 ct",
-        price: 25.99,
-        pricePerPill: 0.58,
-        isGeneric: false,
-        url: "https://www.walgreens.com/search/results.jsp?Ntt=zyrtec+10mg",
-      },
-    ],
-  },
-  omeprazole: {
-    genericName: "Omeprazole",
-    strength: "20 mg",
-    items: [
-      {
-        name: "Equate Omeprazole",
-        store: "Walmart",
-        count: "42 ct",
-        price: 9.88,
-        pricePerPill: 0.24,
-        isGeneric: true,
-        url: "https://www.walmart.com/search?q=equate+omeprazole+20mg",
-      },
-      {
-        name: "CVS Health Omeprazole",
-        store: "CVS",
-        count: "42 ct",
-        price: 11.99,
-        pricePerPill: 0.29,
-        isGeneric: true,
-        url: "https://www.cvs.com/search?searchTerm=cvs+omeprazole+20mg",
-      },
-      {
-        name: "Amazon Basic Care Omeprazole",
-        store: "Amazon",
-        count: "42 ct",
-        price: 12.49,
-        pricePerPill: 0.3,
-        isGeneric: true,
-        url: "https://www.amazon.com/s?k=amazon+basic+care+omeprazole+20mg",
-      },
-      {
-        name: "Prilosec OTC",
-        store: "Amazon",
-        count: "42 ct",
-        price: 21.97,
-        pricePerPill: 0.52,
-        isGeneric: false,
-        url: "https://www.amazon.com/s?k=prilosec+otc+20mg+42ct",
-      },
-      {
-        name: "Prilosec OTC",
-        store: "Walmart",
-        count: "42 ct",
-        price: 22.98,
-        pricePerPill: 0.55,
-        isGeneric: false,
-        url: "https://www.walmart.com/search?q=prilosec+otc+20mg",
-      },
-      {
-        name: "Prilosec OTC",
-        store: "CVS",
-        count: "42 ct",
-        price: 25.99,
-        pricePerPill: 0.62,
-        isGeneric: false,
-        url: "https://www.cvs.com/search?searchTerm=prilosec+otc",
-      },
-      {
-        name: "Prilosec OTC",
-        store: "Walgreens",
-        count: "42 ct",
-        price: 26.99,
-        pricePerPill: 0.64,
-        isGeneric: false,
-        url: "https://www.walgreens.com/search/results.jsp?Ntt=prilosec+otc",
-      },
-    ],
-  },
-  naproxen: {
-    genericName: "Naproxen",
-    strength: "220 mg",
-    items: [
-      {
-        name: "Equate Naproxen",
-        store: "Walmart",
-        count: "100 ct",
-        price: 6.48,
-        pricePerPill: 0.06,
-        isGeneric: true,
-        url: "https://www.walmart.com/search?q=equate+naproxen+220mg",
-      },
-      {
-        name: "CVS Health Naproxen",
-        store: "CVS",
-        count: "100 ct",
-        price: 7.99,
-        pricePerPill: 0.08,
-        isGeneric: true,
-        url: "https://www.cvs.com/search?searchTerm=cvs+naproxen+220mg",
-      },
-      {
-        name: "Amazon Basic Care Naproxen",
-        store: "Amazon",
-        count: "100 ct",
-        price: 8.49,
-        pricePerPill: 0.08,
-        isGeneric: true,
-        url: "https://www.amazon.com/s?k=amazon+basic+care+naproxen+220mg",
-      },
-      {
-        name: "Aleve",
-        store: "Amazon",
-        count: "100 ct",
-        price: 13.97,
-        pricePerPill: 0.14,
-        isGeneric: false,
-        url: "https://www.amazon.com/s?k=aleve+220mg+100ct",
-      },
-      {
-        name: "Aleve",
-        store: "Walmart",
-        count: "100 ct",
-        price: 14.98,
-        pricePerPill: 0.15,
-        isGeneric: false,
-        url: "https://www.walmart.com/search?q=aleve+220mg",
-      },
-      {
-        name: "Aleve",
-        store: "CVS",
-        count: "100 ct",
-        price: 16.99,
-        pricePerPill: 0.17,
-        isGeneric: false,
-        url: "https://www.cvs.com/search?searchTerm=aleve+220mg",
-      },
-      {
-        name: "Aleve",
-        store: "Walgreens",
-        count: "100 ct",
-        price: 17.49,
-        pricePerPill: 0.17,
-        isGeneric: false,
-        url: "https://www.walgreens.com/search/results.jsp?Ntt=aleve+220mg",
-      },
+    default: "acetaminophen_500",
+    options: [
+      { label: "325 mg", key: "acetaminophen_325" },
+      { label: "500 mg", key: "acetaminophen_500" },
+      { label: "650 mg ER", key: "acetaminophen_650" },
     ],
   },
   aspirin: {
-    genericName: "Aspirin",
-    strength: "81 mg",
-    items: [
-      {
-        name: "Equate Aspirin",
-        store: "Walmart",
-        count: "120 ct",
-        price: 3.88,
-        pricePerPill: 0.03,
-        isGeneric: true,
-        url: "https://www.walmart.com/search?q=equate+aspirin+81mg",
-      },
-      {
-        name: "CVS Health Aspirin",
-        store: "CVS",
-        count: "120 ct",
-        price: 4.99,
-        pricePerPill: 0.04,
-        isGeneric: true,
-        url: "https://www.cvs.com/search?searchTerm=cvs+aspirin+81mg",
-      },
-      {
-        name: "Amazon Basic Care Aspirin",
-        store: "Amazon",
-        count: "120 ct",
-        price: 5.49,
-        pricePerPill: 0.05,
-        isGeneric: true,
-        url: "https://www.amazon.com/s?k=amazon+basic+care+aspirin+81mg",
-      },
-      {
-        name: "Bayer Aspirin",
-        store: "Amazon",
-        count: "120 ct",
-        price: 9.97,
-        pricePerPill: 0.08,
-        isGeneric: false,
-        url: "https://www.amazon.com/s?k=bayer+aspirin+81mg+120ct",
-      },
-      {
-        name: "Bayer Aspirin",
-        store: "Walmart",
-        count: "120 ct",
-        price: 10.48,
-        pricePerPill: 0.09,
-        isGeneric: false,
-        url: "https://www.walmart.com/search?q=bayer+aspirin+81mg",
-      },
-      {
-        name: "Bayer Aspirin",
-        store: "CVS",
-        count: "120 ct",
-        price: 11.99,
-        pricePerPill: 0.1,
-        isGeneric: false,
-        url: "https://www.cvs.com/search?searchTerm=bayer+aspirin+81mg",
-      },
-      {
-        name: "Bayer Aspirin",
-        store: "Walgreens",
-        count: "120 ct",
-        price: 12.49,
-        pricePerPill: 0.1,
-        isGeneric: false,
-        url: "https://www.walgreens.com/search/results.jsp?Ntt=bayer+aspirin+81mg",
-      },
+    default: "aspirin_81",
+    options: [
+      { label: "81 mg", key: "aspirin_81" },
+      { label: "325 mg", key: "aspirin_325" },
+      { label: "500 mg", key: "aspirin_500" },
     ],
   },
-  diphenhydramine: {
-    genericName: "Diphenhydramine",
-    strength: "25 mg",
-    items: [
-      {
-        name: "Equate Diphenhydramine",
-        store: "Walmart",
-        count: "100 ct",
-        price: 3.98,
-        pricePerPill: 0.04,
-        isGeneric: true,
-        url: "https://www.walmart.com/search?q=equate+diphenhydramine+25mg",
-      },
-      {
-        name: "CVS Health Diphenhydramine",
-        store: "CVS",
-        count: "100 ct",
-        price: 5.49,
-        pricePerPill: 0.05,
-        isGeneric: true,
-        url: "https://www.cvs.com/search?searchTerm=cvs+diphenhydramine+25mg",
-      },
-      {
-        name: "Amazon Basic Care Diphenhydramine",
-        store: "Amazon",
-        count: "100 ct",
-        price: 5.99,
-        pricePerPill: 0.06,
-        isGeneric: true,
-        url: "https://www.amazon.com/s?k=amazon+basic+care+diphenhydramine+25mg",
-      },
-      {
-        name: "Benadryl",
-        store: "Amazon",
-        count: "100 ct",
-        price: 14.97,
-        pricePerPill: 0.15,
-        isGeneric: false,
-        url: "https://www.amazon.com/s?k=benadryl+25mg+100ct",
-      },
-      {
-        name: "Benadryl",
-        store: "Walmart",
-        count: "100 ct",
-        price: 15.98,
-        pricePerPill: 0.16,
-        isGeneric: false,
-        url: "https://www.walmart.com/search?q=benadryl+25mg",
-      },
-      {
-        name: "Benadryl",
-        store: "CVS",
-        count: "100 ct",
-        price: 17.99,
-        pricePerPill: 0.18,
-        isGeneric: false,
-        url: "https://www.cvs.com/search?searchTerm=benadryl+25mg",
-      },
-      {
-        name: "Benadryl",
-        store: "Walgreens",
-        count: "100 ct",
-        price: 18.49,
-        pricePerPill: 0.18,
-        isGeneric: false,
-        url: "https://www.walgreens.com/search/results.jsp?Ntt=benadryl+25mg",
-      },
-    ],
-  },
-  famotidine: {
-    genericName: "Famotidine",
-    strength: "20 mg",
-    items: [
-      {
-        name: "Equate Famotidine",
-        store: "Walmart",
-        count: "50 ct",
-        price: 7.48,
-        pricePerPill: 0.15,
-        isGeneric: true,
-        url: "https://www.walmart.com/search?q=equate+famotidine+20mg",
-      },
-      {
-        name: "CVS Health Famotidine",
-        store: "CVS",
-        count: "50 ct",
-        price: 9.49,
-        pricePerPill: 0.19,
-        isGeneric: true,
-        url: "https://www.cvs.com/search?searchTerm=cvs+famotidine+20mg",
-      },
-      {
-        name: "Amazon Basic Care Famotidine",
-        store: "Amazon",
-        count: "50 ct",
-        price: 9.99,
-        pricePerPill: 0.2,
-        isGeneric: true,
-        url: "https://www.amazon.com/s?k=amazon+basic+care+famotidine+20mg",
-      },
-      {
-        name: "Pepcid AC",
-        store: "Amazon",
-        count: "50 ct",
-        price: 19.97,
-        pricePerPill: 0.4,
-        isGeneric: false,
-        url: "https://www.amazon.com/s?k=pepcid+ac+20mg+50ct",
-      },
-      {
-        name: "Pepcid AC",
-        store: "Walmart",
-        count: "50 ct",
-        price: 20.98,
-        pricePerPill: 0.42,
-        isGeneric: false,
-        url: "https://www.walmart.com/search?q=pepcid+ac+20mg",
-      },
-      {
-        name: "Pepcid AC",
-        store: "CVS",
-        count: "50 ct",
-        price: 22.99,
-        pricePerPill: 0.46,
-        isGeneric: false,
-        url: "https://www.cvs.com/search?searchTerm=pepcid+ac+20mg",
-      },
-      {
-        name: "Pepcid AC",
-        store: "Walgreens",
-        count: "50 ct",
-        price: 23.49,
-        pricePerPill: 0.47,
-        isGeneric: false,
-        url: "https://www.walgreens.com/search/results.jsp?Ntt=pepcid+ac+20mg",
-      },
-    ],
-  },
-  loperamide: {
-    genericName: "Loperamide",
-    strength: "2 mg",
-    items: [
-      {
-        name: "Equate Loperamide",
-        store: "Walmart",
-        count: "48 ct",
-        price: 5.48,
-        pricePerPill: 0.11,
-        isGeneric: true,
-        url: "https://www.walmart.com/search?q=equate+loperamide+2mg",
-      },
-      {
-        name: "CVS Health Loperamide",
-        store: "CVS",
-        count: "48 ct",
-        price: 6.99,
-        pricePerPill: 0.15,
-        isGeneric: true,
-        url: "https://www.cvs.com/search?searchTerm=cvs+loperamide+2mg",
-      },
-      {
-        name: "Amazon Basic Care Loperamide",
-        store: "Amazon",
-        count: "48 ct",
-        price: 7.49,
-        pricePerPill: 0.16,
-        isGeneric: true,
-        url: "https://www.amazon.com/s?k=amazon+basic+care+loperamide+2mg",
-      },
-      {
-        name: "Imodium AD",
-        store: "Amazon",
-        count: "48 ct",
-        price: 14.97,
-        pricePerPill: 0.31,
-        isGeneric: false,
-        url: "https://www.amazon.com/s?k=imodium+ad+2mg+48ct",
-      },
-      {
-        name: "Imodium AD",
-        store: "Walmart",
-        count: "48 ct",
-        price: 15.48,
-        pricePerPill: 0.32,
-        isGeneric: false,
-        url: "https://www.walmart.com/search?q=imodium+ad+2mg",
-      },
-      {
-        name: "Imodium AD",
-        store: "CVS",
-        count: "48 ct",
-        price: 17.49,
-        pricePerPill: 0.36,
-        isGeneric: false,
-        url: "https://www.cvs.com/search?searchTerm=imodium+ad+2mg",
-      },
-      {
-        name: "Imodium AD",
-        store: "Walgreens",
-        count: "48 ct",
-        price: 17.99,
-        pricePerPill: 0.37,
-        isGeneric: false,
-        url: "https://www.walgreens.com/search/results.jsp?Ntt=imodium+ad+2mg",
-      },
-    ],
-  },
-  simethicone: {
-    genericName: "Simethicone",
-    strength: "125 mg",
-    items: [
-      {
-        name: "Equate Gas Relief",
-        store: "Walmart",
-        count: "72 ct",
-        price: 5.48,
-        pricePerPill: 0.08,
-        isGeneric: true,
-        url: "https://www.walmart.com/search?q=equate+simethicone+125mg",
-      },
-      {
-        name: "CVS Health Gas Relief",
-        store: "CVS",
-        count: "72 ct",
-        price: 7.49,
-        pricePerPill: 0.1,
-        isGeneric: true,
-        url: "https://www.cvs.com/search?searchTerm=cvs+simethicone+125mg",
-      },
-      {
-        name: "Amazon Basic Care Gas Relief",
-        store: "Amazon",
-        count: "72 ct",
-        price: 7.99,
-        pricePerPill: 0.11,
-        isGeneric: true,
-        url: "https://www.amazon.com/s?k=amazon+basic+care+simethicone+125mg",
-      },
-      {
-        name: "Gas-X Extra Strength",
-        store: "Amazon",
-        count: "72 ct",
-        price: 15.97,
-        pricePerPill: 0.22,
-        isGeneric: false,
-        url: "https://www.amazon.com/s?k=gas-x+extra+strength+125mg",
-      },
-      {
-        name: "Gas-X Extra Strength",
-        store: "Walmart",
-        count: "72 ct",
-        price: 16.48,
-        pricePerPill: 0.23,
-        isGeneric: false,
-        url: "https://www.walmart.com/search?q=gas-x+extra+strength+125mg",
-      },
-      {
-        name: "Gas-X Extra Strength",
-        store: "CVS",
-        count: "72 ct",
-        price: 17.99,
-        pricePerPill: 0.25,
-        isGeneric: false,
-        url: "https://www.cvs.com/search?searchTerm=gas-x+extra+strength",
-      },
-      {
-        name: "Gas-X Extra Strength",
-        store: "Walgreens",
-        count: "72 ct",
-        price: 18.49,
-        pricePerPill: 0.26,
-        isGeneric: false,
-        url: "https://www.walgreens.com/search/results.jsp?Ntt=gas-x+extra+strength",
-      },
-    ],
-  },
-  guaifenesin: {
-    genericName: "Guaifenesin",
-    strength: "400 mg",
-    items: [
-      {
-        name: "Equate Chest Congestion",
-        store: "Walmart",
-        count: "100 ct",
-        price: 7.48,
-        pricePerPill: 0.07,
-        isGeneric: true,
-        url: "https://www.walmart.com/search?q=equate+guaifenesin+400mg",
-      },
-      {
-        name: "CVS Health Guaifenesin",
-        store: "CVS",
-        count: "100 ct",
-        price: 8.99,
-        pricePerPill: 0.09,
-        isGeneric: true,
-        url: "https://www.cvs.com/search?searchTerm=cvs+guaifenesin+400mg",
-      },
-      {
-        name: "Amazon Basic Care Guaifenesin",
-        store: "Amazon",
-        count: "100 ct",
-        price: 9.49,
-        pricePerPill: 0.09,
-        isGeneric: true,
-        url: "https://www.amazon.com/s?k=amazon+basic+care+guaifenesin+400mg",
-      },
-      {
-        name: "Mucinex",
-        store: "Amazon",
-        count: "100 ct",
-        price: 23.97,
-        pricePerPill: 0.24,
-        isGeneric: false,
-        url: "https://www.amazon.com/s?k=mucinex+400mg+100ct",
-      },
-      {
-        name: "Mucinex",
-        store: "Walmart",
-        count: "100 ct",
-        price: 24.98,
-        pricePerPill: 0.25,
-        isGeneric: false,
-        url: "https://www.walmart.com/search?q=mucinex+400mg",
-      },
-      {
-        name: "Mucinex",
-        store: "CVS",
-        count: "100 ct",
-        price: 26.99,
-        pricePerPill: 0.27,
-        isGeneric: false,
-        url: "https://www.cvs.com/search?searchTerm=mucinex+400mg",
-      },
-      {
-        name: "Mucinex",
-        store: "Walgreens",
-        count: "100 ct",
-        price: 27.49,
-        pricePerPill: 0.27,
-        isGeneric: false,
-        url: "https://www.walgreens.com/search/results.jsp?Ntt=mucinex+400mg",
-      },
-    ],
-  },
-  dextromethorphan: {
-    genericName: "Dextromethorphan",
-    strength: "15 mg",
-    items: [
-      {
-        name: "Equate Cough Relief",
-        store: "Walmart",
-        count: "40 ct",
-        price: 4.98,
-        pricePerPill: 0.12,
-        isGeneric: true,
-        url: "https://www.walmart.com/search?q=equate+dextromethorphan+cough",
-      },
-      {
-        name: "CVS Health Cough Relief",
-        store: "CVS",
-        count: "40 ct",
-        price: 6.49,
-        pricePerPill: 0.16,
-        isGeneric: true,
-        url: "https://www.cvs.com/search?searchTerm=cvs+dextromethorphan",
-      },
-      {
-        name: "Amazon Basic Care Cough Relief",
-        store: "Amazon",
-        count: "40 ct",
-        price: 6.99,
-        pricePerPill: 0.17,
-        isGeneric: true,
-        url: "https://www.amazon.com/s?k=amazon+basic+care+dextromethorphan",
-      },
-      {
-        name: "Robitussin DM",
-        store: "Amazon",
-        count: "40 ct",
-        price: 12.97,
-        pricePerPill: 0.32,
-        isGeneric: false,
-        url: "https://www.amazon.com/s?k=robitussin+cough+dm",
-      },
-      {
-        name: "Robitussin DM",
-        store: "Walmart",
-        count: "40 ct",
-        price: 13.48,
-        pricePerPill: 0.34,
-        isGeneric: false,
-        url: "https://www.walmart.com/search?q=robitussin+dm",
-      },
-      {
-        name: "Robitussin DM",
-        store: "CVS",
-        count: "40 ct",
-        price: 14.99,
-        pricePerPill: 0.37,
-        isGeneric: false,
-        url: "https://www.cvs.com/search?searchTerm=robitussin+dm",
-      },
-      {
-        name: "Robitussin DM",
-        store: "Walgreens",
-        count: "40 ct",
-        price: 15.49,
-        pricePerPill: 0.39,
-        isGeneric: false,
-        url: "https://www.walgreens.com/search/results.jsp?Ntt=robitussin+dm",
-      },
-    ],
-  },
-  melatonin: {
-    genericName: "Melatonin",
-    strength: "5 mg",
-    items: [
-      {
-        name: "Equate Melatonin",
-        store: "Walmart",
-        count: "120 ct",
-        price: 8.88,
-        pricePerPill: 0.07,
-        isGeneric: true,
-        url: "https://www.walmart.com/search?q=equate+melatonin+5mg",
-      },
-      {
-        name: "CVS Health Melatonin",
-        store: "CVS",
-        count: "120 ct",
-        price: 10.99,
-        pricePerPill: 0.09,
-        isGeneric: true,
-        url: "https://www.cvs.com/search?searchTerm=cvs+melatonin+5mg",
-      },
-      {
-        name: "Amazon Basic Care Melatonin",
-        store: "Amazon",
-        count: "120 ct",
-        price: 11.49,
-        pricePerPill: 0.1,
-        isGeneric: true,
-        url: "https://www.amazon.com/s?k=amazon+basic+care+melatonin+5mg",
-      },
-      {
-        name: "Natrol Melatonin",
-        store: "Amazon",
-        count: "120 ct",
-        price: 14.97,
-        pricePerPill: 0.12,
-        isGeneric: false,
-        url: "https://www.amazon.com/s?k=natrol+melatonin+5mg+120ct",
-      },
-      {
-        name: "Natrol Melatonin",
-        store: "Walmart",
-        count: "120 ct",
-        price: 15.48,
-        pricePerPill: 0.13,
-        isGeneric: false,
-        url: "https://www.walmart.com/search?q=natrol+melatonin+5mg",
-      },
-      {
-        name: "Natrol Melatonin",
-        store: "CVS",
-        count: "120 ct",
-        price: 16.99,
-        pricePerPill: 0.14,
-        isGeneric: false,
-        url: "https://www.cvs.com/search?searchTerm=natrol+melatonin+5mg",
-      },
-      {
-        name: "Natrol Melatonin",
-        store: "Walgreens",
-        count: "120 ct",
-        price: 17.49,
-        pricePerPill: 0.15,
-        isGeneric: false,
-        url: "https://www.walgreens.com/search/results.jsp?Ntt=natrol+melatonin+5mg",
-      },
-    ],
-  },
-  calcium: {
-    genericName: "Calcium Carbonate",
-    strength: "600 mg",
-    items: [
-      {
-        name: "Equate Calcium",
-        store: "Walmart",
-        count: "100 ct",
-        price: 5.88,
-        pricePerPill: 0.06,
-        isGeneric: true,
-        url: "https://www.walmart.com/search?q=equate+calcium+600mg",
-      },
-      {
-        name: "CVS Health Calcium",
-        store: "CVS",
-        count: "100 ct",
-        price: 7.49,
-        pricePerPill: 0.07,
-        isGeneric: true,
-        url: "https://www.cvs.com/search?searchTerm=cvs+calcium+600mg",
-      },
-      {
-        name: "Amazon Basic Care Calcium",
-        store: "Amazon",
-        count: "100 ct",
-        price: 7.99,
-        pricePerPill: 0.08,
-        isGeneric: true,
-        url: "https://www.amazon.com/s?k=amazon+basic+care+calcium+600mg",
-      },
-      {
-        name: "Caltrate 600",
-        store: "Amazon",
-        count: "100 ct",
-        price: 14.97,
-        pricePerPill: 0.15,
-        isGeneric: false,
-        url: "https://www.amazon.com/s?k=caltrate+600+mg+100ct",
-      },
-      {
-        name: "Caltrate 600",
-        store: "Walmart",
-        count: "100 ct",
-        price: 15.48,
-        pricePerPill: 0.15,
-        isGeneric: false,
-        url: "https://www.walmart.com/search?q=caltrate+600mg",
-      },
-      {
-        name: "Caltrate 600",
-        store: "CVS",
-        count: "100 ct",
-        price: 16.99,
-        pricePerPill: 0.17,
-        isGeneric: false,
-        url: "https://www.cvs.com/search?searchTerm=caltrate+600",
-      },
-      {
-        name: "Caltrate 600",
-        store: "Walgreens",
-        count: "100 ct",
-        price: 17.49,
-        pricePerPill: 0.17,
-        isGeneric: false,
-        url: "https://www.walgreens.com/search/results.jsp?Ntt=caltrate+600",
-      },
-    ],
-  },
-  "vitamin d": {
-    genericName: "Vitamin D3",
-    strength: "1000 IU",
-    items: [
-      {
-        name: "Equate Vitamin D3",
-        store: "Walmart",
-        count: "100 ct",
-        price: 4.88,
-        pricePerPill: 0.05,
-        isGeneric: true,
-        url: "https://www.walmart.com/search?q=equate+vitamin+d3+1000iu",
-      },
-      {
-        name: "CVS Health Vitamin D3",
-        store: "CVS",
-        count: "100 ct",
-        price: 5.99,
-        pricePerPill: 0.06,
-        isGeneric: true,
-        url: "https://www.cvs.com/search?searchTerm=cvs+vitamin+d3+1000iu",
-      },
-      {
-        name: "Amazon Basic Care Vitamin D3",
-        store: "Amazon",
-        count: "100 ct",
-        price: 6.49,
-        pricePerPill: 0.06,
-        isGeneric: true,
-        url: "https://www.amazon.com/s?k=amazon+basic+care+vitamin+d3+1000iu",
-      },
-      {
-        name: "Nature's Bounty Vitamin D3",
-        store: "Amazon",
-        count: "100 ct",
-        price: 9.97,
-        pricePerPill: 0.1,
-        isGeneric: false,
-        url: "https://www.amazon.com/s?k=natures+bounty+vitamin+d3+1000iu",
-      },
-      {
-        name: "Nature's Bounty Vitamin D3",
-        store: "Walmart",
-        count: "100 ct",
-        price: 10.48,
-        pricePerPill: 0.1,
-        isGeneric: false,
-        url: "https://www.walmart.com/search?q=natures+bounty+vitamin+d3+1000iu",
-      },
-      {
-        name: "Nature's Bounty Vitamin D3",
-        store: "CVS",
-        count: "100 ct",
-        price: 11.99,
-        pricePerPill: 0.12,
-        isGeneric: false,
-        url: "https://www.cvs.com/search?searchTerm=natures+bounty+vitamin+d3",
-      },
-      {
-        name: "Nature's Bounty Vitamin D3",
-        store: "Walgreens",
-        count: "100 ct",
-        price: 12.49,
-        pricePerPill: 0.12,
-        isGeneric: false,
-        url: "https://www.walgreens.com/search/results.jsp?Ntt=natures+bounty+vitamin+d3",
-      },
-    ],
-  },
-  "fish oil": {
-    genericName: "Fish Oil (Omega-3)",
-    strength: "1000 mg",
-    items: [
-      {
-        name: "Equate Fish Oil",
-        store: "Walmart",
-        count: "100 ct",
-        price: 7.88,
-        pricePerPill: 0.08,
-        isGeneric: true,
-        url: "https://www.walmart.com/search?q=equate+fish+oil+1000mg",
-      },
-      {
-        name: "CVS Health Fish Oil",
-        store: "CVS",
-        count: "100 ct",
-        price: 9.49,
-        pricePerPill: 0.09,
-        isGeneric: true,
-        url: "https://www.cvs.com/search?searchTerm=cvs+fish+oil+1000mg",
-      },
-      {
-        name: "Amazon Basic Care Fish Oil",
-        store: "Amazon",
-        count: "100 ct",
-        price: 9.99,
-        pricePerPill: 0.1,
-        isGeneric: true,
-        url: "https://www.amazon.com/s?k=amazon+basic+care+fish+oil+1000mg",
-      },
-      {
-        name: "Nature's Bounty Fish Oil",
-        store: "Amazon",
-        count: "100 ct",
-        price: 14.97,
-        pricePerPill: 0.15,
-        isGeneric: false,
-        url: "https://www.amazon.com/s?k=natures+bounty+fish+oil+1000mg",
-      },
-      {
-        name: "Nature's Bounty Fish Oil",
-        store: "Walmart",
-        count: "100 ct",
-        price: 15.48,
-        pricePerPill: 0.15,
-        isGeneric: false,
-        url: "https://www.walmart.com/search?q=natures+bounty+fish+oil+1000mg",
-      },
-      {
-        name: "Nature's Bounty Fish Oil",
-        store: "CVS",
-        count: "100 ct",
-        price: 16.99,
-        pricePerPill: 0.17,
-        isGeneric: false,
-        url: "https://www.cvs.com/search?searchTerm=natures+bounty+fish+oil",
-      },
-      {
-        name: "Nature's Bounty Fish Oil",
-        store: "Walgreens",
-        count: "100 ct",
-        price: 17.49,
-        pricePerPill: 0.17,
-        isGeneric: false,
-        url: "https://www.walgreens.com/search/results.jsp?Ntt=natures+bounty+fish+oil",
-      },
+  cetirizine: {
+    default: "cetirizine_10",
+    options: [
+      { label: "5 mg", key: "cetirizine_5" },
+      { label: "10 mg", key: "cetirizine_10" },
     ],
   },
   fexofenadine: {
-    genericName: "Fexofenadine HCl",
-    strength: "180 mg",
-    items: [
-      { name: "Equate Fexofenadine", store: "Walmart", count: "45 ct", price: 10.88, pricePerPill: 0.24, isGeneric: true, url: "https://www.walmart.com/search?q=equate+fexofenadine+180mg" },
-      { name: "Amazon Basic Care Fexofenadine", store: "Amazon", count: "45 ct", price: 11.99, pricePerPill: 0.27, isGeneric: true, url: "https://www.amazon.com/s?k=fexofenadine+180mg+45ct" },
-      { name: "CVS Health Fexofenadine", store: "CVS", count: "45 ct", price: 13.49, pricePerPill: 0.30, isGeneric: true, url: "https://www.cvs.com/search?searchTerm=fexofenadine+180mg" },
-      { name: "Walgreens Fexofenadine", store: "Walgreens", count: "45 ct", price: 14.99, pricePerPill: 0.33, isGeneric: true, url: "https://www.walgreens.com/search/results.jsp?Ntt=fexofenadine+180mg" },
-      { name: "Allegra Allergy", store: "Amazon", count: "45 ct", price: 22.97, pricePerPill: 0.51, isGeneric: false, url: "https://www.amazon.com/s?k=allegra+allergy+180mg+45ct" },
+    default: "fexofenadine_180",
+    options: [
+      { label: "60 mg", key: "fexofenadine_60" },
+      { label: "180 mg", key: "fexofenadine_180" },
     ],
   },
-  bismuth: {
-    genericName: "Bismuth Subsalicylate",
-    strength: "262 mg",
-    items: [
-      { name: "Equate Bismuth Subsalicylate", store: "Walmart", count: "48 ct", price: 4.98, pricePerPill: 0.10, isGeneric: true, url: "https://www.walmart.com/search?q=equate+bismuth+subsalicylate+262mg" },
-      { name: "Amazon Basic Care Bismuth", store: "Amazon", count: "48 ct", price: 5.49, pricePerPill: 0.11, isGeneric: true, url: "https://www.amazon.com/s?k=bismuth+subsalicylate+262mg" },
-      { name: "CVS Health Bismuth", store: "CVS", count: "48 ct", price: 6.49, pricePerPill: 0.14, isGeneric: true, url: "https://www.cvs.com/search?searchTerm=bismuth+subsalicylate" },
-      { name: "Walgreens Bismuth", store: "Walgreens", count: "48 ct", price: 7.29, pricePerPill: 0.15, isGeneric: true, url: "https://www.walgreens.com/search/results.jsp?Ntt=bismuth+subsalicylate" },
-      { name: "Pepto-Bismol", store: "Walmart", count: "48 ct", price: 8.98, pricePerPill: 0.19, isGeneric: false, url: "https://www.walmart.com/search?q=pepto+bismol+tablets" },
+  diphenhydramine: {
+    default: "diphenhydramine_25",
+    options: [
+      { label: "25 mg", key: "diphenhydramine_25" },
+      { label: "50 mg", key: "diphenhydramine_50" },
+    ],
+  },
+  famotidine: {
+    default: "famotidine_20",
+    options: [
+      { label: "10 mg", key: "famotidine_10" },
+      { label: "20 mg", key: "famotidine_20" },
+    ],
+  },
+  simethicone: {
+    default: "simethicone_125",
+    options: [
+      { label: "80 mg", key: "simethicone_80" },
+      { label: "125 mg", key: "simethicone_125" },
+      { label: "180 mg", key: "simethicone_180" },
+    ],
+  },
+  guaifenesin: {
+    default: "guaifenesin_400",
+    options: [
+      { label: "200 mg", key: "guaifenesin_200" },
+      { label: "400 mg", key: "guaifenesin_400" },
+      { label: "600 mg ER", key: "guaifenesin_600" },
+      { label: "1200 mg ER", key: "guaifenesin_1200" },
     ],
   },
   docusate: {
-    genericName: "Docusate Sodium",
-    strength: "100 mg",
-    items: [
-      { name: "Equate Docusate Sodium", store: "Walmart", count: "100 ct", price: 4.48, pricePerPill: 0.04, isGeneric: true, url: "https://www.walmart.com/search?q=equate+docusate+sodium+100mg" },
-      { name: "Amazon Basic Care Docusate", store: "Amazon", count: "100 ct", price: 5.29, pricePerPill: 0.05, isGeneric: true, url: "https://www.amazon.com/s?k=docusate+sodium+100mg+100ct" },
-      { name: "CVS Health Docusate", store: "CVS", count: "100 ct", price: 6.49, pricePerPill: 0.06, isGeneric: true, url: "https://www.cvs.com/search?searchTerm=docusate+sodium+100mg" },
-      { name: "Walgreens Docusate", store: "Walgreens", count: "100 ct", price: 7.29, pricePerPill: 0.07, isGeneric: true, url: "https://www.walgreens.com/search/results.jsp?Ntt=docusate+sodium+100mg" },
-      { name: "Colace", store: "Amazon", count: "100 ct", price: 11.97, pricePerPill: 0.12, isGeneric: false, url: "https://www.amazon.com/s?k=colace+100mg+100ct" },
-    ],
-  },
-  "polyethylene glycol": {
-    genericName: "Polyethylene Glycol 3350",
-    strength: "17 g dose",
-    items: [
-      { name: "Equate MiraLax", store: "Walmart", count: "30 doses", price: 14.88, pricePerPill: 0.50, isGeneric: true, url: "https://www.walmart.com/search?q=equate+polyethylene+glycol+3350" },
-      { name: "Amazon Basic Care PEG 3350", store: "Amazon", count: "30 doses", price: 15.49, pricePerPill: 0.52, isGeneric: true, url: "https://www.amazon.com/s?k=polyethylene+glycol+3350+powder" },
-      { name: "CVS Health PEG 3350", store: "CVS", count: "30 doses", price: 17.99, pricePerPill: 0.60, isGeneric: true, url: "https://www.cvs.com/search?searchTerm=polyethylene+glycol+3350" },
-      { name: "Walgreens PEG 3350", store: "Walgreens", count: "30 doses", price: 18.99, pricePerPill: 0.63, isGeneric: true, url: "https://www.walgreens.com/search/results.jsp?Ntt=polyethylene+glycol+3350" },
-      { name: "MiraLax", store: "Amazon", count: "30 doses", price: 22.97, pricePerPill: 0.77, isGeneric: false, url: "https://www.amazon.com/s?k=miralax+30+doses" },
-    ],
-  },
-  hydrocortisone: {
-    genericName: "Hydrocortisone",
-    strength: "1% Cream",
-    items: [
-      { name: "Equate Hydrocortisone Cream", store: "Walmart", count: "1 oz", price: 2.98, pricePerPill: 2.98, isGeneric: true, url: "https://www.walmart.com/search?q=equate+hydrocortisone+cream+1%" },
-      { name: "Amazon Basic Care Hydrocortisone", store: "Amazon", count: "1 oz", price: 3.49, pricePerPill: 3.49, isGeneric: true, url: "https://www.amazon.com/s?k=hydrocortisone+cream+1%25+1oz" },
-      { name: "CVS Health Hydrocortisone", store: "CVS", count: "1 oz", price: 4.49, pricePerPill: 4.49, isGeneric: true, url: "https://www.cvs.com/search?searchTerm=hydrocortisone+cream+1%" },
-      { name: "Walgreens Hydrocortisone", store: "Walgreens", count: "1 oz", price: 4.99, pricePerPill: 4.99, isGeneric: true, url: "https://www.walgreens.com/search/results.jsp?Ntt=hydrocortisone+cream+1%" },
-      { name: "Cortaid", store: "Amazon", count: "1 oz", price: 6.97, pricePerPill: 6.97, isGeneric: false, url: "https://www.amazon.com/s?k=cortaid+hydrocortisone+cream" },
-    ],
-  },
-  "vitamin c": {
-    genericName: "Vitamin C (Ascorbic Acid)",
-    strength: "500 mg",
-    items: [
-      { name: "Equate Vitamin C", store: "Walmart", count: "100 ct", price: 3.88, pricePerPill: 0.04, isGeneric: true, url: "https://www.walmart.com/search?q=equate+vitamin+c+500mg" },
-      { name: "Amazon Basic Care Vitamin C", store: "Amazon", count: "100 ct", price: 4.49, pricePerPill: 0.04, isGeneric: true, url: "https://www.amazon.com/s?k=vitamin+c+500mg+100ct" },
-      { name: "CVS Health Vitamin C", store: "CVS", count: "100 ct", price: 5.99, pricePerPill: 0.06, isGeneric: true, url: "https://www.cvs.com/search?searchTerm=vitamin+c+500mg" },
-      { name: "Walgreens Vitamin C", store: "Walgreens", count: "100 ct", price: 6.49, pricePerPill: 0.06, isGeneric: true, url: "https://www.walgreens.com/search/results.jsp?Ntt=vitamin+c+500mg" },
-    ],
-  },
-  magnesium: {
-    genericName: "Magnesium Oxide",
-    strength: "400 mg",
-    items: [
-      { name: "Equate Magnesium", store: "Walmart", count: "100 ct", price: 3.98, pricePerPill: 0.04, isGeneric: true, url: "https://www.walmart.com/search?q=equate+magnesium+400mg" },
-      { name: "Amazon Basic Care Magnesium", store: "Amazon", count: "100 ct", price: 4.49, pricePerPill: 0.04, isGeneric: true, url: "https://www.amazon.com/s?k=magnesium+oxide+400mg+100ct" },
-      { name: "CVS Health Magnesium", store: "CVS", count: "100 ct", price: 5.99, pricePerPill: 0.06, isGeneric: true, url: "https://www.cvs.com/search?searchTerm=magnesium+400mg" },
-      { name: "Walgreens Magnesium", store: "Walgreens", count: "100 ct", price: 6.49, pricePerPill: 0.06, isGeneric: true, url: "https://www.walgreens.com/search/results.jsp?Ntt=magnesium+400mg" },
-    ],
-  },
-  zinc: {
-    genericName: "Zinc Gluconate",
-    strength: "50 mg",
-    items: [
-      { name: "Equate Zinc", store: "Walmart", count: "100 ct", price: 3.48, pricePerPill: 0.03, isGeneric: true, url: "https://www.walmart.com/search?q=equate+zinc+50mg" },
-      { name: "Amazon Basic Care Zinc", store: "Amazon", count: "100 ct", price: 3.99, pricePerPill: 0.04, isGeneric: true, url: "https://www.amazon.com/s?k=zinc+gluconate+50mg+100ct" },
-      { name: "CVS Health Zinc", store: "CVS", count: "100 ct", price: 5.49, pricePerPill: 0.05, isGeneric: true, url: "https://www.cvs.com/search?searchTerm=zinc+50mg" },
-      { name: "Walgreens Zinc", store: "Walgreens", count: "100 ct", price: 5.99, pricePerPill: 0.06, isGeneric: true, url: "https://www.walgreens.com/search/results.jsp?Ntt=zinc+50mg" },
-    ],
-  },
-  "vitamin b12": {
-    genericName: "Vitamin B12 (Cyanocobalamin)",
-    strength: "1000 mcg",
-    items: [
-      { name: "Equate Vitamin B12", store: "Walmart", count: "100 ct", price: 5.98, pricePerPill: 0.06, isGeneric: true, url: "https://www.walmart.com/search?q=equate+vitamin+b12+1000mcg" },
-      { name: "Amazon Basic Care B12", store: "Amazon", count: "100 ct", price: 6.49, pricePerPill: 0.06, isGeneric: true, url: "https://www.amazon.com/s?k=vitamin+b12+1000mcg+100ct" },
-      { name: "CVS Health Vitamin B12", store: "CVS", count: "100 ct", price: 7.99, pricePerPill: 0.08, isGeneric: true, url: "https://www.cvs.com/search?searchTerm=vitamin+b12+1000mcg" },
-      { name: "Walgreens Vitamin B12", store: "Walgreens", count: "100 ct", price: 8.99, pricePerPill: 0.09, isGeneric: true, url: "https://www.walgreens.com/search/results.jsp?Ntt=vitamin+b12+1000mcg" },
-    ],
-  },
-  turmeric: {
-    genericName: "Turmeric / Curcumin",
-    strength: "500 mg",
-    items: [
-      { name: "Equate Turmeric Curcumin", store: "Walmart", count: "60 ct", price: 7.98, pricePerPill: 0.13, isGeneric: true, url: "https://www.walmart.com/search?q=equate+turmeric+curcumin" },
-      { name: "Amazon Basic Care Turmeric", store: "Amazon", count: "60 ct", price: 8.99, pricePerPill: 0.15, isGeneric: true, url: "https://www.amazon.com/s?k=turmeric+curcumin+500mg+60ct" },
-      { name: "CVS Health Turmeric", store: "CVS", count: "60 ct", price: 10.99, pricePerPill: 0.18, isGeneric: true, url: "https://www.cvs.com/search?searchTerm=turmeric+curcumin+500mg" },
-      { name: "Walgreens Turmeric", store: "Walgreens", count: "60 ct", price: 11.99, pricePerPill: 0.20, isGeneric: true, url: "https://www.walgreens.com/search/results.jsp?Ntt=turmeric+curcumin" },
-      { name: "Qunol Turmeric", store: "Amazon", count: "60 ct", price: 19.97, pricePerPill: 0.33, isGeneric: false, url: "https://www.amazon.com/s?k=qunol+turmeric+500mg" },
-    ],
-  },
-  elderberry: {
-    genericName: "Elderberry (Sambucus)",
-    strength: "500 mg",
-    items: [
-      { name: "Equate Elderberry", store: "Walmart", count: "60 ct", price: 8.98, pricePerPill: 0.15, isGeneric: true, url: "https://www.walmart.com/search?q=equate+elderberry+500mg" },
-      { name: "Amazon Basic Care Elderberry", store: "Amazon", count: "60 ct", price: 9.99, pricePerPill: 0.17, isGeneric: true, url: "https://www.amazon.com/s?k=elderberry+500mg+60ct" },
-      { name: "CVS Health Elderberry", store: "CVS", count: "60 ct", price: 12.99, pricePerPill: 0.22, isGeneric: true, url: "https://www.cvs.com/search?searchTerm=elderberry+500mg" },
-      { name: "Walgreens Elderberry", store: "Walgreens", count: "60 ct", price: 13.99, pricePerPill: 0.23, isGeneric: true, url: "https://www.walgreens.com/search/results.jsp?Ntt=elderberry+500mg" },
-      { name: "Nature's Bounty Elderberry", store: "Amazon", count: "60 ct", price: 16.97, pricePerPill: 0.28, isGeneric: false, url: "https://www.amazon.com/s?k=natures+bounty+elderberry" },
-    ],
-  },
-  biotin: {
-    genericName: "Biotin (Vitamin B7)",
-    strength: "5000 mcg",
-    items: [
-      { name: "Equate Biotin", store: "Walmart", count: "120 ct", price: 6.98, pricePerPill: 0.06, isGeneric: true, url: "https://www.walmart.com/search?q=equate+biotin+5000mcg" },
-      { name: "Amazon Basic Care Biotin", store: "Amazon", count: "120 ct", price: 7.49, pricePerPill: 0.06, isGeneric: true, url: "https://www.amazon.com/s?k=biotin+5000mcg+120ct" },
-      { name: "CVS Health Biotin", store: "CVS", count: "120 ct", price: 9.99, pricePerPill: 0.08, isGeneric: true, url: "https://www.cvs.com/search?searchTerm=biotin+5000mcg" },
-      { name: "Walgreens Biotin", store: "Walgreens", count: "120 ct", price: 10.99, pricePerPill: 0.09, isGeneric: true, url: "https://www.walgreens.com/search/results.jsp?Ntt=biotin+5000mcg" },
-    ],
-  },
-  glucosamine: {
-    genericName: "Glucosamine Sulfate",
-    strength: "1500 mg",
-    items: [
-      { name: "Equate Glucosamine", store: "Walmart", count: "90 ct", price: 14.88, pricePerPill: 0.17, isGeneric: true, url: "https://www.walmart.com/search?q=equate+glucosamine+1500mg" },
-      { name: "Amazon Basic Care Glucosamine", store: "Amazon", count: "90 ct", price: 16.49, pricePerPill: 0.18, isGeneric: true, url: "https://www.amazon.com/s?k=glucosamine+sulfate+1500mg+90ct" },
-      { name: "CVS Health Glucosamine", store: "CVS", count: "90 ct", price: 19.99, pricePerPill: 0.22, isGeneric: true, url: "https://www.cvs.com/search?searchTerm=glucosamine+1500mg" },
-      { name: "Walgreens Glucosamine", store: "Walgreens", count: "90 ct", price: 21.99, pricePerPill: 0.24, isGeneric: true, url: "https://www.walgreens.com/search/results.jsp?Ntt=glucosamine+1500mg" },
-      { name: "Move Free", store: "Amazon", count: "90 ct", price: 28.97, pricePerPill: 0.32, isGeneric: false, url: "https://www.amazon.com/s?k=move+free+glucosamine" },
-    ],
-  },
-  coq10: {
-    genericName: "Coenzyme Q10 (CoQ10)",
-    strength: "100 mg",
-    items: [
-      { name: "Equate CoQ10", store: "Walmart", count: "60 ct", price: 11.88, pricePerPill: 0.20, isGeneric: true, url: "https://www.walmart.com/search?q=equate+coq10+100mg" },
-      { name: "Amazon Basic Care CoQ10", store: "Amazon", count: "60 ct", price: 12.99, pricePerPill: 0.22, isGeneric: true, url: "https://www.amazon.com/s?k=coq10+100mg+60ct" },
-      { name: "CVS Health CoQ10", store: "CVS", count: "60 ct", price: 15.99, pricePerPill: 0.27, isGeneric: true, url: "https://www.cvs.com/search?searchTerm=coq10+100mg" },
-      { name: "Walgreens CoQ10", store: "Walgreens", count: "60 ct", price: 17.99, pricePerPill: 0.30, isGeneric: true, url: "https://www.walgreens.com/search/results.jsp?Ntt=coq10+100mg" },
-      { name: "Qunol CoQ10", store: "Amazon", count: "60 ct", price: 24.97, pricePerPill: 0.42, isGeneric: false, url: "https://www.amazon.com/s?k=qunol+coq10+100mg" },
-    ],
-  },
-  probiotics: {
-    genericName: "Probiotics",
-    strength: "10 Billion CFU",
-    items: [
-      { name: "Equate Probiotic", store: "Walmart", count: "30 ct", price: 9.98, pricePerPill: 0.33, isGeneric: true, url: "https://www.walmart.com/search?q=equate+probiotic+10+billion" },
-      { name: "Amazon Basic Care Probiotic", store: "Amazon", count: "30 ct", price: 10.99, pricePerPill: 0.37, isGeneric: true, url: "https://www.amazon.com/s?k=probiotic+10+billion+cfu+30ct" },
-      { name: "CVS Health Probiotic", store: "CVS", count: "30 ct", price: 13.99, pricePerPill: 0.47, isGeneric: true, url: "https://www.cvs.com/search?searchTerm=probiotic+10+billion" },
-      { name: "Walgreens Probiotic", store: "Walgreens", count: "30 ct", price: 14.99, pricePerPill: 0.50, isGeneric: true, url: "https://www.walgreens.com/search/results.jsp?Ntt=probiotic+10+billion" },
-      { name: "Culturelle Probiotic", store: "Amazon", count: "30 ct", price: 23.97, pricePerPill: 0.80, isGeneric: false, url: "https://www.amazon.com/s?k=culturelle+probiotic+30ct" },
+    default: "docusate_100",
+    options: [
+      { label: "100 mg", key: "docusate_100" },
+      { label: "250 mg", key: "docusate_250" },
     ],
   },
 };
 
+// Find which drug family a strength-specific key belongs to (e.g. "acetaminophen_500" → "acetaminophen")
+function findDrugFamily(key: string): string | null {
+  for (const [familyKey, family] of Object.entries(DRUG_STRENGTHS)) {
+    if (family.options.some((opt) => opt.key === key)) return familyKey;
+  }
+  return null;
+}
+
 // ── Live pricing via Cloudflare Worker ────────────────────────────────────
-// Deploy price-worker/ to get a URL, then set it here.
-// Falls back to static PRICE_DB if the worker is unreachable.
 const PRICE_WORKER_URL = "https://medcheck-price-worker.donvenecio.workers.dev";
 
 type WorkerResponse = {
@@ -1412,18 +128,38 @@ async function fetchLivePrices(
 ): Promise<{ data: SearchedProduct; updatedAt: string; isEstimate: boolean; disclaimer: string } | null> {
   try {
     const res = await fetch(`${PRICE_WORKER_URL}/prices?drug=${encodeURIComponent(drugKey)}`, {
-      signal: AbortSignal.timeout(6000),
+      signal: AbortSignal.timeout(8000),
     });
     if (!res.ok) return null;
     const body: WorkerResponse = await res.json();
-    if (!body.data) return null;
-    return { data: body.data, updatedAt: body.updatedAt, isEstimate: body.isEstimate, disclaimer: body.disclaimer };
+    if (body.data) {
+      return { data: body.data, updatedAt: body.updatedAt, isEstimate: body.isEstimate, disclaimer: body.disclaimer };
+    }
+    // If strength-specific key returned no data, try the base name
+    // (worker cache may still use old non-suffixed keys)
+    if (drugKey.includes("_")) {
+      const baseKey = drugKey.replace(/_[^_]+$/, "");
+      const fallbackRes = await fetch(`${PRICE_WORKER_URL}/prices?drug=${encodeURIComponent(baseKey)}`, {
+        signal: AbortSignal.timeout(8000),
+      });
+      if (!fallbackRes.ok) return null;
+      const fallbackBody: WorkerResponse = await fallbackRes.json();
+      if (!fallbackBody.data) return null;
+      const family = findDrugFamily(drugKey);
+      const strengthOpt = family
+        ? DRUG_STRENGTHS[family]?.options.find((o) => o.key === drugKey)
+        : null;
+      const data = { ...fallbackBody.data };
+      if (strengthOpt) data.strength = strengthOpt.label;
+      return { data, updatedAt: fallbackBody.updatedAt, isEstimate: fallbackBody.isEstimate, disclaimer: fallbackBody.disclaimer };
+    }
+    return null;
   } catch {
     return null;
   }
 }
-// ──────────────────────────────────────────────────────────────────────────
 
+// ── Brand → generic alias map ─────────────────────────────────────────────
 const ALIASES: Record<string, string> = {
   tylenol: "acetaminophen",
   advil: "ibuprofen",
@@ -1485,6 +221,9 @@ export default function PricesScreen() {
   const [updatedAt, setUpdatedAt] = useState<string | null>(null);
   const [isEstimate, setIsEstimate] = useState(false);
   const [disclaimer, setDisclaimer] = useState<string | null>(null);
+  // Strength picker state
+  const [strengthOptions, setStrengthOptions] = useState<StrengthOption[] | null>(null);
+  const [activeStrengthKey, setActiveStrengthKey] = useState<string>("");
   // Track last searched key so we don't re-run on unrelated re-renders
   const lastSearchedKey = useRef<string>("");
 
@@ -1501,23 +240,53 @@ export default function PricesScreen() {
     }
   };
 
-  const runSearch = useCallback((rawKey: string, displayName: string) => {
-    const resolvedKey = ALIASES[rawKey] || rawKey;
-    if (lastSearchedKey.current === resolvedKey) return;
-    lastSearchedKey.current = resolvedKey;
-    setQuery(displayName);
+  const fetchAndApply = useCallback(async (drugKey: string) => {
     setLoading(true);
     setResult(null);
-    fetchLivePrices(resolvedKey).then((live) => {
-      if (live) {
-        applyResult(live.data, live);
-      } else {
-        const found = PRICE_DB[resolvedKey];
-        if (found) applyResult(found);
-      }
-      setLoading(false);
-    });
+    const live = await fetchLivePrices(drugKey);
+    if (live) {
+      applyResult(live.data, live);
+    }
+    setLoading(false);
   }, []);
+
+  const runSearch = useCallback((rawKey: string, displayName: string) => {
+    // Resolve brand aliases first (e.g. "tylenol" → "acetaminophen")
+    const aliasResolved = ALIASES[rawKey] || rawKey;
+    // Check if this is a base name with multiple strengths
+    const family = DRUG_STRENGTHS[aliasResolved];
+    // If it's already a strength-specific key, find its family
+    const parentFamily = findDrugFamily(aliasResolved);
+
+    let finalKey: string;
+    if (family) {
+      // Base name → resolve to default strength, show picker
+      finalKey = family.default;
+      setStrengthOptions(family.options);
+      setActiveStrengthKey(finalKey);
+    } else if (parentFamily) {
+      // Already strength-specific → show picker with this one pre-selected
+      setStrengthOptions(DRUG_STRENGTHS[parentFamily].options);
+      setActiveStrengthKey(aliasResolved);
+      finalKey = aliasResolved;
+    } else {
+      // Single-strength drug or no family
+      setStrengthOptions(null);
+      setActiveStrengthKey("");
+      finalKey = aliasResolved;
+    }
+
+    if (lastSearchedKey.current === finalKey) return;
+    lastSearchedKey.current = finalKey;
+    setQuery(displayName);
+    fetchAndApply(finalKey);
+  }, [fetchAndApply]);
+
+  const handleStrengthChange = useCallback((key: string) => {
+    setActiveStrengthKey(key);
+    lastSearchedKey.current = key;
+    fetchAndApply(key);
+  }, [fetchAndApply]);
 
   // ?drug= param takes priority (navigated from lookup with a specific strength key)
   useEffect(() => {
@@ -1536,26 +305,39 @@ export default function PricesScreen() {
 
   const searchPrices = async () => {
     if (!query.trim()) return;
+    const key = query.trim().toLowerCase();
+    const aliasResolved = ALIASES[key] || key;
+    const family = DRUG_STRENGTHS[aliasResolved];
+    const parentFamily = findDrugFamily(aliasResolved);
+
+    let finalKey: string;
+    if (family) {
+      finalKey = family.default;
+      setStrengthOptions(family.options);
+      setActiveStrengthKey(finalKey);
+    } else if (parentFamily) {
+      setStrengthOptions(DRUG_STRENGTHS[parentFamily].options);
+      setActiveStrengthKey(aliasResolved);
+      finalKey = aliasResolved;
+    } else {
+      setStrengthOptions(null);
+      setActiveStrengthKey("");
+      finalKey = aliasResolved;
+    }
+
+    lastSearchedKey.current = finalKey;
     setLoading(true);
     setResult(null);
-    const key = query.trim().toLowerCase();
-    const resolvedKey = ALIASES[key] || key;
-    const live = await fetchLivePrices(resolvedKey);
+    const live = await fetchLivePrices(finalKey);
     if (live) {
       applyResult(live.data, live);
       setLoading(false);
       return;
     }
-    const found = PRICE_DB[resolvedKey];
-    if (!found) {
-      Alert.alert(
-        "Not found",
-        "Prices not available for this product. Try: acetaminophen, ibuprofen, aspirin, naproxen, loratadine, cetirizine, fexofenadine, diphenhydramine, omeprazole, famotidine, loperamide, bismuth, docusate, MiraLax, hydrocortisone, melatonin, calcium, vitamin D, vitamin C, magnesium, zinc, vitamin B12, fish oil, turmeric, elderberry, biotin, glucosamine, CoQ10, probiotics",
-      );
-      setLoading(false);
-      return;
-    }
-    applyResult(found);
+    Alert.alert(
+      "Not found",
+      "Prices not available for this product. Check your connection and try again.",
+    );
     setLoading(false);
   };
 
@@ -1601,6 +383,9 @@ export default function PricesScreen() {
                   setUpdatedAt(null);
                   setIsEstimate(false);
                   setDisclaimer(null);
+                  setStrengthOptions(null);
+                  setActiveStrengthKey("");
+                  lastSearchedKey.current = "";
                 }}
                 hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
               >
@@ -1632,6 +417,33 @@ export default function PricesScreen() {
               {result.strength} · sorted by lowest price
               {updatedAt ? ` · updated ${updatedAt}` : ""}
             </Text>
+
+            {/* Strength picker — shown when multiple strengths are available */}
+            {strengthOptions && strengthOptions.length > 1 && (
+              <View style={S.strengthRow}>
+                {strengthOptions.map((opt) => (
+                  <TouchableOpacity
+                    key={opt.key}
+                    style={[
+                      S.strengthChip,
+                      activeStrengthKey === opt.key && S.strengthChipActive,
+                    ]}
+                    onPress={() => handleStrengthChange(opt.key)}
+                    activeOpacity={0.7}
+                  >
+                    <Text
+                      style={[
+                        S.strengthChipText,
+                        activeStrengthKey === opt.key && S.strengthChipTextActive,
+                      ]}
+                    >
+                      {opt.label}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
+
             {isEstimate && disclaimer && (
               <Text style={S.estimateNote}>⚠ {disclaimer}</Text>
             )}
@@ -1769,7 +581,33 @@ const S = StyleSheet.create({
     fontSize: FONT.sm,
     color: COLOR.textMuted,
     marginTop: 4,
-    marginBottom: 16,
+    marginBottom: 8,
+  },
+  strengthRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    marginBottom: 12,
+  },
+  strengthChip: {
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 20,
+    borderWidth: 1.5,
+    borderColor: "#ccc",
+    backgroundColor: COLOR.white,
+  },
+  strengthChipActive: {
+    borderColor: COLOR.primaryMid,
+    backgroundColor: COLOR.primaryMid,
+  },
+  strengthChipText: {
+    fontSize: FONT.sm,
+    color: COLOR.textSub,
+    fontWeight: "500",
+  },
+  strengthChipTextActive: {
+    color: COLOR.white,
   },
   localCard: {
     flexDirection: "row",
