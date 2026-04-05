@@ -30,11 +30,7 @@ export default function TabLayout() {
         name="index"
         options={{ title: "Lookup", headerTitle: "MedCheck" }}
       />
-      <Tabs.Screen
-        name="prices"
-        options={{ title: "Prices", headerTitle: "MedCheck" }}
-      />
-      <Tabs.Screen
+<Tabs.Screen
         name="compare"
         options={{ title: "Compare", headerTitle: "MedCheck" }}
       />

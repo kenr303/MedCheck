@@ -429,8 +429,7 @@ export function lookupOTC(query: string): MedProduct | null {
     isBTC: defaultVariant.isBTC ?? false,
     genericKey: match.key,
     otcFamily: family,
-    priceKey: defaultStrength.priceKey || match.key,
-    otcNote: defaultVariant.note,
+otcNote: defaultVariant.note,
   };
 }
 

@@ -13,7 +13,6 @@ import { Ingredient } from "./useMedStore";
 
 export type OTCStrengthOption = {
   label: string;      // e.g. "200 mg"
-  priceKey: string;   // key into PRICE_DB / worker
   ingredients: Ingredient[];
 };
 
@@ -42,10 +41,9 @@ function ing(name: string, concentration: string, purpose: string): Ingredient {
 
 function single(
   label: string,
-  priceKey: string,
   ingredients: Ingredient[],
 ): OTCStrengthOption {
-  return { label, priceKey, ingredients };
+  return { label, ingredients };
 }
 
 // ─── Database ─────────────────────────────────────────────────────────────────
@@ -65,9 +63,9 @@ export const OTC_FAMILIES: Record<string, OTCDrugFamily> = {
         form: "tablet / caplet",
         defaultStrengthIndex: 1,
         strengths: [
-          single("325 mg (Regular Strength)", "acetaminophen_325", [ing("Acetaminophen", "325 mg", "Pain reliever / Fever reducer")]),
-          single("500 mg (Extra Strength)", "acetaminophen_500", [ing("Acetaminophen", "500 mg", "Pain reliever / Fever reducer")]),
-          single("650 mg ER (Extended Release)", "acetaminophen_650", [ing("Acetaminophen", "650 mg", "Pain reliever / Fever reducer")]),
+          single("325 mg (Regular Strength)", [ing("Acetaminophen", "325 mg", "Pain reliever / Fever reducer")]),
+          single("500 mg (Extra Strength)", [ing("Acetaminophen", "500 mg", "Pain reliever / Fever reducer")]),
+          single("650 mg ER (Extended Release)", [ing("Acetaminophen", "650 mg", "Pain reliever / Fever reducer")]),
         ],
       },
       {
@@ -78,7 +76,7 @@ export const OTC_FAMILIES: Record<string, OTCDrugFamily> = {
         defaultStrengthIndex: 0,
         note: "Contains diphenhydramine — causes drowsiness. Do not take with other sleep aids or antihistamines.",
         strengths: [
-          single("500 mg / 25 mg", "acetaminophen_500", [
+          single("500 mg / 25 mg", [
             ing("Acetaminophen", "500 mg", "Pain reliever / Fever reducer"),
             ing("Diphenhydramine HCl", "25 mg", "Nighttime sleep aid"),
           ]),
@@ -91,7 +89,7 @@ export const OTC_FAMILIES: Record<string, OTCDrugFamily> = {
         form: "caplet",
         defaultStrengthIndex: 0,
         strengths: [
-          single("500 mg / 5 mg", "acetaminophen_500", [
+          single("500 mg / 5 mg", [
             ing("Acetaminophen", "500 mg", "Pain reliever / Fever reducer"),
             ing("Phenylephrine HCl", "5 mg", "Nasal decongestant"),
           ]),
@@ -112,7 +110,7 @@ export const OTC_FAMILIES: Record<string, OTCDrugFamily> = {
         defaultStrengthIndex: 0,
         note: "200 mg is the only OTC strength. 400/600/800 mg are prescription-only.",
         strengths: [
-          single("200 mg", "ibuprofen", [ing("Ibuprofen", "200 mg", "Pain reliever / Fever reducer / Anti-inflammatory")]),
+          single("200 mg", [ing("Ibuprofen", "200 mg", "Pain reliever / Fever reducer / Anti-inflammatory")]),
         ],
       },
       {
@@ -123,7 +121,7 @@ export const OTC_FAMILIES: Record<string, OTCDrugFamily> = {
         defaultStrengthIndex: 0,
         note: "Contains diphenhydramine — causes drowsiness. Do not combine with other antihistamines.",
         strengths: [
-          single("200 mg / 25 mg", "ibuprofen", [
+          single("200 mg / 25 mg", [
             ing("Ibuprofen", "200 mg", "Pain reliever / Fever reducer"),
             ing("Diphenhydramine Citrate", "38 mg", "Nighttime sleep aid"),
           ]),
@@ -136,7 +134,7 @@ export const OTC_FAMILIES: Record<string, OTCDrugFamily> = {
         form: "coated tablet",
         defaultStrengthIndex: 0,
         strengths: [
-          single("200 mg / 10 mg", "ibuprofen", [
+          single("200 mg / 10 mg", [
             ing("Ibuprofen", "200 mg", "Pain reliever / Fever reducer"),
             ing("Phenylephrine HCl", "10 mg", "Nasal decongestant"),
           ]),
@@ -157,7 +155,7 @@ export const OTC_FAMILIES: Record<string, OTCDrugFamily> = {
         defaultStrengthIndex: 0,
         note: "220 mg (OTC) = 200 mg naproxen base. Strengths ≥ 275 mg are prescription-only.",
         strengths: [
-          single("220 mg", "naproxen", [ing("Naproxen Sodium", "220 mg", "Pain reliever / Fever reducer / Anti-inflammatory")]),
+          single("220 mg", [ing("Naproxen Sodium", "220 mg", "Pain reliever / Fever reducer / Anti-inflammatory")]),
         ],
       },
     ],
@@ -174,9 +172,9 @@ export const OTC_FAMILIES: Record<string, OTCDrugFamily> = {
         form: "tablet / coated tablet",
         defaultStrengthIndex: 0,
         strengths: [
-          single("81 mg (Low Dose / Cardioprotective)", "aspirin_81", [ing("Aspirin", "81 mg", "Pain reliever / Fever reducer / Cardioprotective")]),
-          single("325 mg (Regular Strength)", "aspirin_325", [ing("Aspirin", "325 mg", "Pain reliever / Fever reducer / Anti-inflammatory")]),
-          single("500 mg (Extra Strength)", "aspirin_500", [ing("Aspirin", "500 mg", "Pain reliever / Fever reducer")]),
+          single("81 mg (Low Dose / Cardioprotective)", [ing("Aspirin", "81 mg", "Pain reliever / Fever reducer / Cardioprotective")]),
+          single("325 mg (Regular Strength)", [ing("Aspirin", "325 mg", "Pain reliever / Fever reducer / Anti-inflammatory")]),
+          single("500 mg (Extra Strength)", [ing("Aspirin", "500 mg", "Pain reliever / Fever reducer")]),
         ],
       },
       {
@@ -187,7 +185,7 @@ export const OTC_FAMILIES: Record<string, OTCDrugFamily> = {
         defaultStrengthIndex: 0,
         note: "Same formula for Excedrin Extra Strength and Excedrin Migraine. Contains 65 mg caffeine per dose.",
         strengths: [
-          single("250 mg / 250 mg / 65 mg", "aspirin_325", [
+          single("250 mg / 250 mg / 65 mg", [
             ing("Aspirin", "250 mg", "Pain reliever / Anti-inflammatory"),
             ing("Acetaminophen", "250 mg", "Pain reliever"),
             ing("Caffeine", "65 mg", "Pain reliever aid"),
@@ -201,7 +199,7 @@ export const OTC_FAMILIES: Record<string, OTCDrugFamily> = {
         form: "caplet / gel tab",
         defaultStrengthIndex: 0,
         strengths: [
-          single("500 mg / 65 mg", "acetaminophen_500", [
+          single("500 mg / 65 mg", [
             ing("Acetaminophen", "500 mg", "Pain reliever"),
             ing("Caffeine", "65 mg", "Pain reliever aid"),
           ]),
@@ -223,7 +221,7 @@ export const OTC_FAMILIES: Record<string, OTCDrugFamily> = {
         form: "tablet",
         defaultStrengthIndex: 0,
         strengths: [
-          single("10 mg (24-hour)", "loratadine", [ing("Loratadine", "10 mg", "Antihistamine — allergy relief (non-drowsy)")]),
+          single("10 mg (24-hour)", [ing("Loratadine", "10 mg", "Antihistamine — allergy relief (non-drowsy)")]),
         ],
       },
       {
@@ -235,7 +233,7 @@ export const OTC_FAMILIES: Record<string, OTCDrugFamily> = {
         note: "Kept behind the pharmacy counter. Valid ID required. Contains pseudoephedrine 120 mg (12-hr release).",
         defaultStrengthIndex: 0,
         strengths: [
-          single("5 mg / 120 mg ER", "loratadine", [
+          single("5 mg / 120 mg ER", [
             ing("Loratadine", "5 mg", "Antihistamine — allergy relief (non-drowsy)"),
             ing("Pseudoephedrine Sulfate", "120 mg ER", "Nasal decongestant (12-hour)"),
           ]),
@@ -250,7 +248,7 @@ export const OTC_FAMILIES: Record<string, OTCDrugFamily> = {
         note: "Kept behind the pharmacy counter. Valid ID required. Contains pseudoephedrine 240 mg (24-hr release).",
         defaultStrengthIndex: 0,
         strengths: [
-          single("10 mg / 240 mg ER", "loratadine", [
+          single("10 mg / 240 mg ER", [
             ing("Loratadine", "10 mg", "Antihistamine — allergy relief (non-drowsy)"),
             ing("Pseudoephedrine Sulfate", "240 mg ER", "Nasal decongestant (24-hour)"),
           ]),
@@ -270,8 +268,8 @@ export const OTC_FAMILIES: Record<string, OTCDrugFamily> = {
         form: "tablet",
         defaultStrengthIndex: 1,
         strengths: [
-          single("5 mg", "cetirizine_5", [ing("Cetirizine HCl", "5 mg", "Antihistamine — allergy relief")]),
-          single("10 mg (24-hour)", "cetirizine_10", [ing("Cetirizine HCl", "10 mg", "Antihistamine — allergy relief")]),
+          single("5 mg", [ing("Cetirizine HCl", "5 mg", "Antihistamine — allergy relief")]),
+          single("10 mg (24-hour)", [ing("Cetirizine HCl", "10 mg", "Antihistamine — allergy relief")]),
         ],
       },
       {
@@ -283,7 +281,7 @@ export const OTC_FAMILIES: Record<string, OTCDrugFamily> = {
         note: "Kept behind the pharmacy counter. Valid ID required. Each tablet contains pseudoephedrine 120 mg ER.",
         defaultStrengthIndex: 0,
         strengths: [
-          single("5 mg / 120 mg ER", "cetirizine_5", [
+          single("5 mg / 120 mg ER", [
             ing("Cetirizine HCl", "5 mg", "Antihistamine — allergy relief"),
             ing("Pseudoephedrine HCl", "120 mg ER", "Nasal decongestant (12-hour)"),
           ]),
@@ -303,7 +301,7 @@ export const OTC_FAMILIES: Record<string, OTCDrugFamily> = {
         form: "tablet",
         defaultStrengthIndex: 0,
         strengths: [
-          single("60 mg (12-hour)", "fexofenadine_60", [ing("Fexofenadine HCl", "60 mg", "Antihistamine — allergy relief (non-drowsy)")]),
+          single("60 mg (12-hour)", [ing("Fexofenadine HCl", "60 mg", "Antihistamine — allergy relief (non-drowsy)")]),
         ],
       },
       {
@@ -313,7 +311,7 @@ export const OTC_FAMILIES: Record<string, OTCDrugFamily> = {
         form: "tablet",
         defaultStrengthIndex: 0,
         strengths: [
-          single("180 mg (24-hour)", "fexofenadine_180", [ing("Fexofenadine HCl", "180 mg", "Antihistamine — allergy relief (non-drowsy)")]),
+          single("180 mg (24-hour)", [ing("Fexofenadine HCl", "180 mg", "Antihistamine — allergy relief (non-drowsy)")]),
         ],
       },
       {
@@ -325,7 +323,7 @@ export const OTC_FAMILIES: Record<string, OTCDrugFamily> = {
         note: "Kept behind the pharmacy counter. Valid ID required. Pseudoephedrine 120 mg extended-release.",
         defaultStrengthIndex: 0,
         strengths: [
-          single("60 mg / 120 mg ER", "fexofenadine_60", [
+          single("60 mg / 120 mg ER", [
             ing("Fexofenadine HCl", "60 mg", "Antihistamine — allergy relief (non-drowsy)"),
             ing("Pseudoephedrine HCl", "120 mg ER", "Nasal decongestant (12-hour)"),
           ]),
@@ -340,7 +338,7 @@ export const OTC_FAMILIES: Record<string, OTCDrugFamily> = {
         note: "Kept behind the pharmacy counter. Valid ID required. Pseudoephedrine 240 mg extended-release.",
         defaultStrengthIndex: 0,
         strengths: [
-          single("180 mg / 240 mg ER", "fexofenadine_180", [
+          single("180 mg / 240 mg ER", [
             ing("Fexofenadine HCl", "180 mg", "Antihistamine — allergy relief (non-drowsy)"),
             ing("Pseudoephedrine HCl", "240 mg ER", "Nasal decongestant (24-hour)"),
           ]),
@@ -361,8 +359,8 @@ export const OTC_FAMILIES: Record<string, OTCDrugFamily> = {
         defaultStrengthIndex: 0,
         note: "Causes significant drowsiness. Use with caution in adults over 65.",
         strengths: [
-          single("25 mg", "diphenhydramine_25", [ing("Diphenhydramine HCl", "25 mg", "Antihistamine — allergy / cold relief")]),
-          single("50 mg (maximum strength)", "diphenhydramine_50", [ing("Diphenhydramine HCl", "50 mg", "Antihistamine / Nighttime sleep aid")]),
+          single("25 mg", [ing("Diphenhydramine HCl", "25 mg", "Antihistamine — allergy / cold relief")]),
+          single("50 mg (maximum strength)", [ing("Diphenhydramine HCl", "50 mg", "Antihistamine / Nighttime sleep aid")]),
         ],
       },
       {
@@ -372,7 +370,7 @@ export const OTC_FAMILIES: Record<string, OTCDrugFamily> = {
         form: "tablet",
         defaultStrengthIndex: 0,
         strengths: [
-          single("25 mg / 10 mg", "diphenhydramine_25", [
+          single("25 mg / 10 mg", [
             ing("Diphenhydramine HCl", "25 mg", "Antihistamine — allergy relief"),
             ing("Phenylephrine HCl", "10 mg", "Nasal decongestant"),
           ]),
@@ -395,7 +393,7 @@ export const OTC_FAMILIES: Record<string, OTCDrugFamily> = {
         defaultStrengthIndex: 0,
         note: "Available on shelf without ID. Note: studies question the effectiveness of oral phenylephrine as a decongestant.",
         strengths: [
-          single("10 mg", "", [ing("Phenylephrine HCl", "10 mg", "Nasal decongestant")]),
+          single("10 mg", [ing("Phenylephrine HCl", "10 mg", "Nasal decongestant")]),
         ],
       },
       {
@@ -407,10 +405,10 @@ export const OTC_FAMILIES: Record<string, OTCDrugFamily> = {
         note: "Kept behind the pharmacy counter. Valid photo ID required. Federal purchase limits apply (CMEA).",
         defaultStrengthIndex: 0,
         strengths: [
-          single("30 mg (Immediate Release)", "", [ing("Pseudoephedrine HCl", "30 mg", "Nasal decongestant")]),
-          single("60 mg (Immediate Release)", "", [ing("Pseudoephedrine HCl", "60 mg", "Nasal decongestant")]),
-          single("120 mg ER (12-hour)", "", [ing("Pseudoephedrine HCl", "120 mg ER", "Nasal decongestant (12-hour)")]),
-          single("240 mg ER (24-hour)", "", [ing("Pseudoephedrine HCl", "240 mg ER", "Nasal decongestant (24-hour)")]),
+          single("30 mg (Immediate Release)", [ing("Pseudoephedrine HCl", "30 mg", "Nasal decongestant")]),
+          single("60 mg (Immediate Release)", [ing("Pseudoephedrine HCl", "60 mg", "Nasal decongestant")]),
+          single("120 mg ER (12-hour)", [ing("Pseudoephedrine HCl", "120 mg ER", "Nasal decongestant (12-hour)")]),
+          single("240 mg ER (24-hour)", [ing("Pseudoephedrine HCl", "240 mg ER", "Nasal decongestant (24-hour)")]),
         ],
       },
     ],
@@ -429,10 +427,10 @@ export const OTC_FAMILIES: Record<string, OTCDrugFamily> = {
         form: "tablet / ER tablet",
         defaultStrengthIndex: 1,
         strengths: [
-          single("200 mg (Immediate Release)", "guaifenesin_200", [ing("Guaifenesin", "200 mg", "Expectorant — thins and loosens mucus")]),
-          single("400 mg (Immediate Release)", "guaifenesin_400", [ing("Guaifenesin", "400 mg", "Expectorant — thins and loosens mucus")]),
-          single("600 mg ER (12-hour)", "guaifenesin_600", [ing("Guaifenesin", "600 mg ER", "Expectorant — thins and loosens mucus")]),
-          single("1200 mg ER (12-hour Maximum Strength)", "guaifenesin_1200", [ing("Guaifenesin", "1200 mg ER", "Expectorant — thins and loosens mucus")]),
+          single("200 mg (Immediate Release)", [ing("Guaifenesin", "200 mg", "Expectorant — thins and loosens mucus")]),
+          single("400 mg (Immediate Release)", [ing("Guaifenesin", "400 mg", "Expectorant — thins and loosens mucus")]),
+          single("600 mg ER (12-hour)", [ing("Guaifenesin", "600 mg ER", "Expectorant — thins and loosens mucus")]),
+          single("1200 mg ER (12-hour Maximum Strength)", [ing("Guaifenesin", "1200 mg ER", "Expectorant — thins and loosens mucus")]),
         ],
       },
       {
@@ -442,11 +440,11 @@ export const OTC_FAMILIES: Record<string, OTCDrugFamily> = {
         form: "ER tablet",
         defaultStrengthIndex: 0,
         strengths: [
-          single("600 mg / 30 mg ER (12-hour)", "guaifenesin_600", [
+          single("600 mg / 30 mg ER (12-hour)", [
             ing("Guaifenesin", "600 mg ER", "Expectorant"),
             ing("Dextromethorphan HBr", "30 mg ER", "Cough suppressant"),
           ]),
-          single("1200 mg / 60 mg ER (12-hour Max Strength)", "guaifenesin_1200", [
+          single("1200 mg / 60 mg ER (12-hour Max Strength)", [
             ing("Guaifenesin", "1200 mg ER", "Expectorant"),
             ing("Dextromethorphan HBr", "60 mg ER", "Cough suppressant"),
           ]),
@@ -461,11 +459,11 @@ export const OTC_FAMILIES: Record<string, OTCDrugFamily> = {
         note: "Kept behind the pharmacy counter. Valid ID required. Contains pseudoephedrine.",
         defaultStrengthIndex: 0,
         strengths: [
-          single("600 mg / 60 mg ER (12-hour)", "guaifenesin_600", [
+          single("600 mg / 60 mg ER (12-hour)", [
             ing("Guaifenesin", "600 mg ER", "Expectorant"),
             ing("Pseudoephedrine HCl", "60 mg ER", "Nasal decongestant"),
           ]),
-          single("1200 mg / 120 mg ER (12-hour Max Strength)", "guaifenesin_1200", [
+          single("1200 mg / 120 mg ER (12-hour Max Strength)", [
             ing("Guaifenesin", "1200 mg ER", "Expectorant"),
             ing("Pseudoephedrine HCl", "120 mg ER", "Nasal decongestant"),
           ]),
@@ -485,9 +483,9 @@ export const OTC_FAMILIES: Record<string, OTCDrugFamily> = {
         form: "liquid / tablet / lozenge",
         defaultStrengthIndex: 1,
         strengths: [
-          single("10 mg / 5 mL (Liquid)", "dextromethorphan", [ing("Dextromethorphan HBr", "10 mg / 5 mL", "Cough suppressant")]),
-          single("15 mg (Tablet)", "dextromethorphan", [ing("Dextromethorphan HBr", "15 mg", "Cough suppressant")]),
-          single("30 mg ER / 5 mL (12-hour Liquid)", "dextromethorphan", [ing("Dextromethorphan Polistirex", "30 mg ER / 5 mL", "Cough suppressant (12-hour)")]),
+          single("10 mg / 5 mL (Liquid)", [ing("Dextromethorphan HBr", "10 mg / 5 mL", "Cough suppressant")]),
+          single("15 mg (Tablet)", [ing("Dextromethorphan HBr", "15 mg", "Cough suppressant")]),
+          single("30 mg ER / 5 mL (12-hour Liquid)", [ing("Dextromethorphan Polistirex", "30 mg ER / 5 mL", "Cough suppressant (12-hour)")]),
         ],
       },
       {
@@ -497,7 +495,7 @@ export const OTC_FAMILIES: Record<string, OTCDrugFamily> = {
         form: "liquid",
         defaultStrengthIndex: 0,
         strengths: [
-          single("100 mg / 10 mg per 5 mL", "dextromethorphan", [
+          single("100 mg / 10 mg per 5 mL", [
             ing("Guaifenesin", "100 mg / 5 mL", "Expectorant"),
             ing("Dextromethorphan HBr", "10 mg / 5 mL", "Cough suppressant"),
           ]),
@@ -510,7 +508,7 @@ export const OTC_FAMILIES: Record<string, OTCDrugFamily> = {
         form: "liquid",
         defaultStrengthIndex: 0,
         strengths: [
-          single("100 mg / 10 mg / 5 mg per 5 mL", "dextromethorphan", [
+          single("100 mg / 10 mg / 5 mg per 5 mL", [
             ing("Guaifenesin", "100 mg / 5 mL", "Expectorant"),
             ing("Dextromethorphan HBr", "10 mg / 5 mL", "Cough suppressant"),
             ing("Phenylephrine HCl", "5 mg / 5 mL", "Nasal decongestant"),
@@ -532,7 +530,7 @@ export const OTC_FAMILIES: Record<string, OTCDrugFamily> = {
         defaultStrengthIndex: 0,
         note: "Contains doxylamine — causes drowsiness. Do not drive after taking.",
         strengths: [
-          single("325 mg / 15 mg / 6.25 mg per dose", "acetaminophen_325", [
+          single("325 mg / 15 mg / 6.25 mg per dose", [
             ing("Acetaminophen", "325 mg", "Pain reliever / Fever reducer"),
             ing("Dextromethorphan HBr", "15 mg", "Cough suppressant"),
             ing("Doxylamine Succinate", "6.25 mg", "Antihistamine / Sleep aid"),
@@ -547,7 +545,7 @@ export const OTC_FAMILIES: Record<string, OTCDrugFamily> = {
         defaultStrengthIndex: 0,
         note: "Adds phenylephrine as a decongestant. Causes drowsiness.",
         strengths: [
-          single("325 mg / 15 mg / 6.25 mg / 5 mg per dose", "acetaminophen_325", [
+          single("325 mg / 15 mg / 6.25 mg / 5 mg per dose", [
             ing("Acetaminophen", "325 mg", "Pain reliever / Fever reducer"),
             ing("Dextromethorphan HBr", "15 mg", "Cough suppressant"),
             ing("Doxylamine Succinate", "6.25 mg", "Antihistamine / Sleep aid"),
@@ -563,7 +561,7 @@ export const OTC_FAMILIES: Record<string, OTCDrugFamily> = {
         defaultStrengthIndex: 0,
         note: "Does not contain a sleep aid — safe to use during the day.",
         strengths: [
-          single("325 mg / 10 mg / 5 mg per dose", "acetaminophen_325", [
+          single("325 mg / 10 mg / 5 mg per dose", [
             ing("Acetaminophen", "325 mg", "Pain reliever / Fever reducer"),
             ing("Dextromethorphan HBr", "10 mg", "Cough suppressant"),
             ing("Phenylephrine HCl", "5 mg", "Nasal decongestant"),
@@ -587,7 +585,7 @@ export const OTC_FAMILIES: Record<string, OTCDrugFamily> = {
         defaultStrengthIndex: 0,
         note: "20 mg is the only OTC strength. Take once daily for 14 days. Do not use >3 courses/year without a doctor.",
         strengths: [
-          single("20 mg", "omeprazole", [ing("Omeprazole", "20 mg", "Acid reducer (proton pump inhibitor)")]),
+          single("20 mg", [ing("Omeprazole", "20 mg", "Acid reducer (proton pump inhibitor)")]),
         ],
       },
     ],
@@ -604,8 +602,8 @@ export const OTC_FAMILIES: Record<string, OTCDrugFamily> = {
         form: "tablet",
         defaultStrengthIndex: 0,
         strengths: [
-          single("10 mg (Original Strength)", "famotidine_10", [ing("Famotidine", "10 mg", "Acid reducer (H2 blocker)")]),
-          single("20 mg (Maximum Strength)", "famotidine_20", [ing("Famotidine", "20 mg", "Acid reducer (H2 blocker)")]),
+          single("10 mg (Original Strength)", [ing("Famotidine", "10 mg", "Acid reducer (H2 blocker)")]),
+          single("20 mg (Maximum Strength)", [ing("Famotidine", "20 mg", "Acid reducer (H2 blocker)")]),
         ],
       },
       {
@@ -616,7 +614,7 @@ export const OTC_FAMILIES: Record<string, OTCDrugFamily> = {
         defaultStrengthIndex: 0,
         note: "Fast-acting antacid component plus famotidine for longer-lasting acid control.",
         strengths: [
-          single("10 mg / 800 mg / 165 mg", "famotidine_10", [
+          single("10 mg / 800 mg / 165 mg", [
             ing("Famotidine", "10 mg", "Acid reducer (H2 blocker)"),
             ing("Calcium Carbonate", "800 mg", "Antacid"),
             ing("Magnesium Hydroxide", "165 mg", "Antacid"),
@@ -638,7 +636,7 @@ export const OTC_FAMILIES: Record<string, OTCDrugFamily> = {
         defaultStrengthIndex: 0,
         note: "FDA recommends strict adherence to dosing. Do not exceed 8 mg/day for self-care.",
         strengths: [
-          single("2 mg", "loperamide", [ing("Loperamide HCl", "2 mg", "Anti-diarrheal")]),
+          single("2 mg", [ing("Loperamide HCl", "2 mg", "Anti-diarrheal")]),
         ],
       },
       {
@@ -648,7 +646,7 @@ export const OTC_FAMILIES: Record<string, OTCDrugFamily> = {
         form: "caplet",
         defaultStrengthIndex: 0,
         strengths: [
-          single("2 mg / 125 mg", "loperamide", [
+          single("2 mg / 125 mg", [
             ing("Loperamide HCl", "2 mg", "Anti-diarrheal"),
             ing("Simethicone", "125 mg", "Antigas / Anti-flatulence"),
           ]),
@@ -668,9 +666,9 @@ export const OTC_FAMILIES: Record<string, OTCDrugFamily> = {
         form: "softgel / chewable tablet",
         defaultStrengthIndex: 1,
         strengths: [
-          single("80 mg (Regular Strength)", "simethicone_80", [ing("Simethicone", "80 mg", "Antigas / Anti-flatulence")]),
-          single("125 mg (Extra Strength)", "simethicone_125", [ing("Simethicone", "125 mg", "Antigas / Anti-flatulence")]),
-          single("180 mg (Ultra Strength)", "simethicone_180", [ing("Simethicone", "180 mg", "Antigas / Anti-flatulence")]),
+          single("80 mg (Regular Strength)", [ing("Simethicone", "80 mg", "Antigas / Anti-flatulence")]),
+          single("125 mg (Extra Strength)", [ing("Simethicone", "125 mg", "Antigas / Anti-flatulence")]),
+          single("180 mg (Ultra Strength)", [ing("Simethicone", "180 mg", "Antigas / Anti-flatulence")]),
         ],
       },
     ],
@@ -687,8 +685,8 @@ export const OTC_FAMILIES: Record<string, OTCDrugFamily> = {
         form: "tablet / liquid / chewable tablet",
         defaultStrengthIndex: 0,
         strengths: [
-          single("262 mg (Regular Strength)", "bismuth", [ing("Bismuth Subsalicylate", "262 mg", "Antidiarrheal / Antacid / Anti-nausea")]),
-          single("525 mg / 15 mL (Maximum Strength Liquid)", "bismuth", [ing("Bismuth Subsalicylate", "525 mg / 15 mL", "Antidiarrheal / Antacid / Anti-nausea")]),
+          single("262 mg (Regular Strength)", [ing("Bismuth Subsalicylate", "262 mg", "Antidiarrheal / Antacid / Anti-nausea")]),
+          single("525 mg / 15 mL (Maximum Strength Liquid)", [ing("Bismuth Subsalicylate", "525 mg / 15 mL", "Antidiarrheal / Antacid / Anti-nausea")]),
         ],
       },
     ],
@@ -705,8 +703,8 @@ export const OTC_FAMILIES: Record<string, OTCDrugFamily> = {
         form: "capsule / tablet",
         defaultStrengthIndex: 0,
         strengths: [
-          single("100 mg", "docusate_100", [ing("Docusate Sodium", "100 mg", "Stool softener / Laxative")]),
-          single("250 mg", "docusate_250", [ing("Docusate Sodium", "250 mg", "Stool softener / Laxative")]),
+          single("100 mg", [ing("Docusate Sodium", "100 mg", "Stool softener / Laxative")]),
+          single("250 mg", [ing("Docusate Sodium", "250 mg", "Stool softener / Laxative")]),
         ],
       },
     ],
@@ -723,7 +721,7 @@ export const OTC_FAMILIES: Record<string, OTCDrugFamily> = {
         form: "powder (mix with liquid)",
         defaultStrengthIndex: 0,
         strengths: [
-          single("17 g per dose", "polyethylene glycol", [ing("Polyethylene Glycol 3350", "17 g / dose", "Osmotic laxative")]),
+          single("17 g per dose", [ing("Polyethylene Glycol 3350", "17 g / dose", "Osmotic laxative")]),
         ],
       },
     ],
@@ -743,8 +741,8 @@ export const OTC_FAMILIES: Record<string, OTCDrugFamily> = {
         defaultStrengthIndex: 1,
         note: "1% is the maximum OTC strength. Do not use on face, groin, or underarms without a doctor's guidance.",
         strengths: [
-          single("0.5%", "hydrocortisone", [ing("Hydrocortisone", "0.5%", "Anti-itch / Anti-inflammatory corticosteroid")]),
-          single("1% (Maximum OTC Strength)", "hydrocortisone", [ing("Hydrocortisone", "1%", "Anti-itch / Anti-inflammatory corticosteroid")]),
+          single("0.5%", [ing("Hydrocortisone", "0.5%", "Anti-itch / Anti-inflammatory corticosteroid")]),
+          single("1% (Maximum OTC Strength)", [ing("Hydrocortisone", "1%", "Anti-itch / Anti-inflammatory corticosteroid")]),
         ],
       },
     ],
@@ -764,7 +762,7 @@ export const OTC_FAMILIES: Record<string, OTCDrugFamily> = {
         defaultStrengthIndex: 0,
         note: "Contains dimenhydrinate (antihistamine + stimulant). Causes drowsiness.",
         strengths: [
-          single("50 mg", "", [ing("Dimenhydrinate", "50 mg", "Antihistamine — motion sickness / nausea")]),
+          single("50 mg", [ing("Dimenhydrinate", "50 mg", "Antihistamine — motion sickness / nausea")]),
         ],
       },
       {
@@ -775,7 +773,7 @@ export const OTC_FAMILIES: Record<string, OTCDrugFamily> = {
         defaultStrengthIndex: 0,
         note: "Less sedating than dimenhydrinate. Also sold as Bonine, Travel-Ease.",
         strengths: [
-          single("25 mg", "", [ing("Meclizine HCl", "25 mg", "Antihistamine — motion sickness / vertigo")]),
+          single("25 mg", [ing("Meclizine HCl", "25 mg", "Antihistamine — motion sickness / vertigo")]),
         ],
       },
     ],
@@ -795,11 +793,11 @@ export const OTC_FAMILIES: Record<string, OTCDrugFamily> = {
         defaultStrengthIndex: 2,
         note: "Dietary supplement — not FDA-approved as a drug. Start with the lowest effective dose (0.5–3 mg). Higher doses are not more effective for most people.",
         strengths: [
-          single("0.5 mg (Low Dose)", "melatonin", [ing("Melatonin", "0.5 mg", "Sleep aid / Circadian rhythm support")]),
-          single("1 mg", "melatonin", [ing("Melatonin", "1 mg", "Sleep aid / Circadian rhythm support")]),
-          single("3 mg", "melatonin", [ing("Melatonin", "3 mg", "Sleep aid / Circadian rhythm support")]),
-          single("5 mg", "melatonin", [ing("Melatonin", "5 mg", "Sleep aid / Circadian rhythm support")]),
-          single("10 mg (High Dose)", "melatonin", [ing("Melatonin", "10 mg", "Sleep aid / Circadian rhythm support")]),
+          single("0.5 mg (Low Dose)", [ing("Melatonin", "0.5 mg", "Sleep aid / Circadian rhythm support")]),
+          single("1 mg", [ing("Melatonin", "1 mg", "Sleep aid / Circadian rhythm support")]),
+          single("3 mg", [ing("Melatonin", "3 mg", "Sleep aid / Circadian rhythm support")]),
+          single("5 mg", [ing("Melatonin", "5 mg", "Sleep aid / Circadian rhythm support")]),
+          single("10 mg (High Dose)", [ing("Melatonin", "10 mg", "Sleep aid / Circadian rhythm support")]),
         ],
       },
     ],

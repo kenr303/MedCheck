@@ -259,19 +259,10 @@ export default function LookupScreen() {
   const currentVariant = product?.otcFamily?.variants[selectedVariantIdx] ?? null;
   const selectedStrength = currentVariant?.strengths[selectedStrengthIdx] ?? null;
   const displayedIngredients = selectedStrength?.ingredients ?? product?.ingredients ?? [];
-  const activePriceKey = selectedStrength?.priceKey || currentVariant?.strengths[0]?.priceKey || product?.priceKey || product?.genericKey || "";
   const displayIsBTC = currentVariant?.isBTC ?? product?.isBTC ?? false;
   const displayNote = currentVariant?.note ?? product?.otcNote;
 
-  const handleSeePrices = () => {
-    if (!product) return;
-    // Pass the selected strength's priceKey so prices tab searches correctly
-    const updatedProduct = { ...product, priceKey: activePriceKey };
-    setCurrentProduct(updatedProduct);
-    router.push(`/(tabs)/prices?drug=${encodeURIComponent(activePriceKey)}`);
-  };
-
-  const showCompareBanner = (msg: string) => {
+const showCompareBanner = (msg: string) => {
     setCompareBanner(msg);
     setTimeout(() => setCompareBanner(""), 4000);
   };
@@ -648,14 +639,7 @@ export default function LookupScreen() {
                 </View>
               ) : null}
 
-              <TouchableOpacity
-                style={S.actionBtnPrimary}
-                onPress={handleSeePrices}
-                activeOpacity={0.85}
-              >
-                <Text style={S.actionBtnPrimaryText}>See prices</Text>
-              </TouchableOpacity>
-              <View style={S.actionRowSecondary}>
+<View style={S.actionRowSecondary}>
                 <TouchableOpacity
                   style={S.actionBtn}
                   onPress={handleAddToCompare}
